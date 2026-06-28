@@ -1,0 +1,7 @@
+eas build --platform android --profile development
+PS C:\Dhairya Amin\Projects\TechFocal\backend> php artisan schedule:wor
+
+
+
+PROMPT
+ Okay so now i wanted to solve some issue in PO likewise when we go to the Line Items i need to scrioll left to right to see all the fileds or edit or anythng so for that i am planning like u add an small button like that opens an modal with the all line items fields sseen properly and then when in that it should not be save option like if i fill up in the modal the line items data than the same must shown in the list of an we are just creating these for better ux

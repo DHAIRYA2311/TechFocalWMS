@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "138013554115",
+    "project_id": "techfocal-9cd7e",
+    "storage_bucket": "techfocal-9cd7e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:138013554115:android:9587199c65583de701b976",
+        "android_client_info": {
+          "package_name": "com.dhairyaamin.techfocal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGAJ5r2vniPqDnoveyWvt6PmQzsKVY47M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
