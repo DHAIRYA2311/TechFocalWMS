@@ -293,8 +293,7 @@ export default function ChallansScreen() {
       
       const initialQtys: Record<number, string> = {};
       poDetails.items?.forEach((item: any) => {
-        const remaining = Math.max(0, parseFloat(item.quantity) - parseFloat(item.received_qty || 0));
-        initialQtys[item.id] = remaining > 0 ? remaining.toString() : '';
+        initialQtys[item.id] = '0';
       });
       setFormItemsQty(initialQtys);
     } catch (err) {
@@ -331,14 +330,10 @@ export default function ChallansScreen() {
     }
 
     for (const item of selectedPoDetails.items) {
-      const enteredStr = formItemsQty[item.id] || '';
-      if (enteredStr.trim() !== '') {
-        const enteredQty = parseFloat(enteredStr);
-        if (isNaN(enteredQty) || enteredQty <= 0) {
-          validationError = `Invalid quantity entered for item ${item.item_code || item.description}. It must be greater than zero.`;
-          break;
-        }
-
+      const enteredStr = formItemsQty[item.id] || '0';
+      const enteredQty = parseFloat(enteredStr) || 0;
+      
+      if (enteredQty > 0) {
         const remaining = parseFloat(item.quantity) - parseFloat(item.received_qty || 0);
         if (enteredQty > remaining) {
           validationError = `Quantity for ${item.item_code || item.description} exceeds remaining allowed (${remaining} ${item.unit || 'PC'}).`;
@@ -349,6 +344,9 @@ export default function ChallansScreen() {
           po_item_id: item.id,
           quantity_received: enteredQty
         });
+      } else if (enteredQty < 0) {
+        validationError = `Quantity for ${item.item_code || item.description} cannot be negative.`;
+        break;
       }
     }
 
