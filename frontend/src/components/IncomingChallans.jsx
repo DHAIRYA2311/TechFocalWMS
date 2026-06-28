@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import CustomSelect from './CustomSelect';
 import { 
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 
 export default function IncomingChallans() {
+  const location = useLocation();
   const [challans, setChallans] = useState([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -71,7 +73,13 @@ export default function IncomingChallans() {
 
   useEffect(() => {
     fetchChallans();
-  }, []);
+    if (location.state && location.state.fromPoId) {
+      setCreating(true);
+      fetchApprovedPOs();
+      handlePoChange(location.state.fromPoId);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const handleStartCreate = () => {
     setCreating(true);

@@ -361,22 +361,73 @@ class PurchaseOrderController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
+        if (!$request->user()->hasPermission('purchase_orders')) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
         $po = PurchaseOrder::findOrFail($id);
 
         $request->validate([
             'status' => 'required|string|in:draft_review,approved,rejected,marked_review,completed',
+            'remarks' => 'nullable|string'
         ]);
 
+        DB::beginTransaction();
+
         try {
+            $originalSnapshot = $this->getPoSnapshot($po);
+
             $po->update([
                 'status' => $request->status,
             ]);
 
+            $revisedSnapshot = $this->getPoSnapshot($po->fresh());
+
+            // Create audit log
+            \App\Models\PurchaseOrderAuditLog::create([
+                'purchase_order_id' => $po->id,
+                'action' => $request->status,
+                'original_version' => $originalSnapshot,
+                'revised_version' => $revisedSnapshot,
+                'user_id' => $request->user()->id,
+                'user_name' => $request->user()->name,
+            ]);
+
+            // Automatically initialize Job Cards if status is approved
+            if ($request->status === 'approved') {
+                $po->load('items');
+                $settingPrefix = \App\Models\Setting::getVal('prefix_job', 'JOB-');
+                foreach ($po->items as $poItem) {
+                    $existingJob = \App\Models\JobCard::where('po_item_id', $poItem->id)->first();
+                    if (!$existingJob) {
+                        $lastJob = \App\Models\JobCard::orderBy('id', 'desc')->first();
+                        $nextNum = 1;
+                        if ($lastJob) {
+                            $parts = explode('-', $lastJob->job_card_number);
+                            $lastSeq = (int) end($parts);
+                            $nextNum = $lastSeq + 1;
+                        }
+                        $jobCardNumber = $settingPrefix . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
+
+                        \App\Models\JobCard::create([
+                            'job_card_number' => $jobCardNumber,
+                            'po_item_id' => $poItem->id,
+                            'quantity' => $poItem->quantity,
+                            'status' => 'pending',
+                            'remarks' => $po->remarks
+                        ]);
+                    }
+                }
+            }
+
+            DB::commit();
+
             return response()->json([
                 'message' => "Purchase Order status updated to '{$request->status}' successfully.",
-                'po' => $po
+                'po' => $po->fresh()->load('items.jobCards', 'items.deliveryItems')
             ]);
         } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'message' => 'Failed to update PO status: ' . $e->getMessage()
             ], 500);

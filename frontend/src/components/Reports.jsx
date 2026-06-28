@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import ExecutiveReportTemplate from './ExecutiveReportTemplate';
 import CustomSelect from './CustomSelect';
+import { generateExecutivePDF } from '../utils/pdfGenerator';
 import {
   BarChart3,
   Calendar,
@@ -67,83 +65,18 @@ export default function Reports() {
     }
   }, [timeframe, customStart, customEnd]);
 
-  const downloadPDF = async () => {
-    const input = document.getElementById('executive-pdf-template');
-    if (!input) {
-      alert("Report template not found.");
-      return;
-    }
-
+  const downloadPDF = () => {
+    if (!data) return;
     setDownloading(true);
-
-    // Temporarily make the template visible for html2canvas to capture it accurately
-    input.style.left = '0';
-    input.style.top = '0';
-    input.style.position = 'relative';
-
-    // Small delay to ensure DOM applies the styles
-    await new Promise(resolve => setTimeout(resolve, 150));
-
     try {
-      const canvas = await html2canvas(input, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff'
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const totalPdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      let heightLeft = totalPdfHeight;
-      let position = 0;
-
-      // Top padding for the first page
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, totalPdfHeight);
-      heightLeft -= pdfHeight;
-
-      // Multi-page rendering
-      while (heightLeft > 0) {
-        position = heightLeft - totalPdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, totalPdfHeight);
-        heightLeft -= pdfHeight;
-      }
-
-      // Format timestamp DDMMYYYY HH:MM
-      const now = new Date();
-      const timestamp = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const footerText = `TechFocal WMS | Confidential - Internal Use Only`;
-
-      const pageCount = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-
-        // White bar at the bottom to cover cut-offs
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, pdfHeight - 15, pdfWidth, 15, 'F');
-
-        pdf.setFontSize(8);
-        pdf.setTextColor(100);
-        pdf.text(footerText, 14, pdfHeight - 7);
-        pdf.text(`Generated: ${timestamp}`, 14, pdfHeight - 4);
-        pdf.text(`Page ${i} of ${pageCount}`, pdfWidth - 20, pdfHeight - 7);
-      }
-
-      pdf.save(`TechFocal_Executive_Report_${timestamp.replace(/ /g, '_')}.pdf`);
+      const timeframeText = timeframe === 'custom' && customStart && customEnd 
+        ? `${customStart} to ${customEnd}`
+        : timeframe.replace('_', ' ').toUpperCase();
+      generateExecutivePDF(data, timeframeText);
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Failed to generate PDF. Please try again.');
     } finally {
-      // Hide the template again
-      input.style.position = 'absolute';
-      input.style.left = '-9999px';
-      input.style.top = '0';
       setDownloading(false);
     }
   };
@@ -171,13 +104,6 @@ export default function Reports() {
 
   return (
     <div style={{ position: 'relative', overflowX: 'hidden' }}>
-      {/* Hidden PDF Template for Export */}
-      <ExecutiveReportTemplate
-        data={data}
-        timeframe={timeframe}
-        customStart={customStart}
-        customEnd={customEnd}
-      />
 
       <div id="report-content" className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px', backgroundColor: '#ffffff' }}>
 
@@ -203,6 +129,8 @@ export default function Reports() {
                   { value: 'today', label: 'Today' },
                   { value: 'this_week', label: 'This Week' },
                   { value: 'this_month', label: 'This Month' },
+                  { value: 'this_quarter', label: 'This Quarter' },
+                  { value: 'this_year', label: 'This Year' },
                   { value: 'custom', label: 'Custom Range' }
                 ]}
                 style={{ height: '36px' }}

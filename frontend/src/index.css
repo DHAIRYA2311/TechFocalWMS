@@ -605,3 +605,53 @@ body {
   }
 }
 
+/* ========================================================== */
+/* EXECUTIVE MANAGEMENT REPORT PDF STYLES                     */
+/* ========================================================== */
+.pdf-report-container {
+  width: 800px;
+  background-color: #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.report-page {
+  width: 800px;
+  height: 1130px;
+  padding: 40px;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+  color: #1e293b;
+  line-height: 1.5;
+}
+
+.report-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #1a3a5c;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  height: 50px;
+}
+
+.report-page-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+  margin-top: 20px;
+  font-size: 10px;
+  color: #64748b;
+  height: 30px;
+}
+
+

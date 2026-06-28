@@ -97,17 +97,6 @@ class ChallanParserService
                                 $qtyReceived = floatval($qtyMatches[1]);
                                 break;
                             }
-                            
-                            // Fallback: match any decimal/number that is not part of a date or code
-                            if (preg_match_all('/(?<![\d\-\/.])\b(\d+(?:\.\d+)?)\b(?![\d\-\/.])/i', $cleanArea, $allNums)) {
-                                foreach ($allNums[1] as $num) {
-                                    $val = floatval($num);
-                                    if ($val > 0 && $val <= $poItem->quantity) {
-                                        $qtyReceived = $val;
-                                        break 2;
-                                    }
-                                }
-                            }
                         }
                     }
 

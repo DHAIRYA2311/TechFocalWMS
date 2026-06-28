@@ -24,23 +24,55 @@ class ReportController extends Controller
         $startDateParam = $request->query('start_date');
         $endDateParam = $request->query('end_date');
 
-        // Determine date range boundaries
+        // Determine current date range boundaries
         [$start, $end] = $this->getDateRange($filter, $startDateParam, $endDateParam);
 
-        // Current Month Boundaries for the monthly operational stats
-        $monthStart = now()->startOfMonth();
-        $monthEnd = now()->endOfMonth();
+        // Determine previous date range boundaries for comparison
+        $prevStart = $start->copy();
+        $prevEnd = $end->copy();
+
+        switch ($filter) {
+            case 'today':
+                $prevStart->subDay()->startOfDay();
+                $prevEnd->subDay()->endOfDay();
+                break;
+            case 'this_week':
+                $prevStart->subWeek()->startOfWeek();
+                $prevEnd->subWeek()->endOfWeek();
+                break;
+            case 'this_month':
+                $prevStart->subMonth()->startOfMonth();
+                $prevEnd->subMonth()->endOfMonth();
+                break;
+            case 'this_quarter':
+                $prevStart->subMonths(3)->startOfQuarter();
+                $prevEnd->subMonths(3)->endOfQuarter();
+                break;
+            case 'this_year':
+                $prevStart->subYear()->startOfYear();
+                $prevEnd->subYear()->endOfYear();
+                break;
+            case 'custom':
+            default:
+                $days = $start->diffInDays($end) + 1;
+                $prevStart->subDays($days)->startOfDay();
+                $prevEnd->subDays($days)->endOfDay();
+                break;
+        }
 
         // -------------------------------------------------------------
-        // I. OPERATIONAL DETAILED STATS (Individual Questions)
+        // I. COMPARISON METRICS (MoM Calculations)
         // -------------------------------------------------------------
+        $currentMetrics = $this->getPeriodMetrics($start, $end);
+        $prevMetrics = $this->getPeriodMetrics($prevStart, $prevEnd);
 
-        // 1. Work completed in selected range / this month
+        // -------------------------------------------------------------
+        // II. OPERATIONAL DETAILED STATS (Individual Questions)
+        // -------------------------------------------------------------
         $completedJobsCount = JobCard::where('status', 'completed')
             ->whereBetween('updated_at', [$start, $end])
             ->count();
 
-        // 2. Customer giving us most business
         $topCustomerQuery = PurchaseOrder::join('po_items', 'purchase_orders.id', '=', 'po_items.purchase_order_id')
             ->select('purchase_orders.customer_name', DB::raw('SUM(po_items.total_amount) as total_business'))
             ->groupBy('purchase_orders.customer_name')
@@ -49,20 +81,21 @@ class ReportController extends Controller
         $topCustomerName = $topCustomerQuery ? $topCustomerQuery->customer_name : 'No Customers';
         $topCustomerRevenue = $topCustomerQuery ? floatval($topCustomerQuery->total_business) : 0;
 
-        // 3. Most utilized machine
-        $topMachineQuery = Machine::withCount(['jobCards as completed_count' => function ($q) {
-            $q->where('status', 'completed');
+        $topMachineQuery = Machine::withCount(['jobCards as completed_count' => function ($q) use ($start, $end) {
+            $q->where('status', 'completed')->whereBetween('updated_at', [$start, $end]);
         }])->orderByDesc('completed_count')->first();
-        $mostUtilizedMachine = $topMachineQuery ? "{$topMachineQuery->machine_code} - {$topMachineQuery->name}" : 'No Machines';
+        $mostUtilizedMachine = $topMachineQuery && $topMachineQuery->completed_count > 0 
+            ? "{$topMachineQuery->machine_code} - {$topMachineQuery->name}" 
+            : 'No Machine Records';
 
-        // 4. Worker who completed the most jobs
         $topWorkerQuery = JobCard::where('status', 'completed')
+            ->whereBetween('updated_at', [$start, $end])
             ->select('assigned_worker_id', DB::raw('COUNT(*) as completed_count'))
             ->groupBy('assigned_worker_id')
             ->orderByDesc('completed_count')
             ->first();
             
-        $topWorkerName = 'No Workers';
+        $topWorkerName = 'No Worker Records';
         if ($topWorkerQuery && $topWorkerQuery->assigned_worker_id) {
             $worker = User::find($topWorkerQuery->assigned_worker_id);
             if ($worker) {
@@ -70,20 +103,17 @@ class ReportController extends Controller
             }
         }
 
-        // 5. Material consumed in selected range
         $materialConsumed = floatval(
             JobCard::where('status', 'completed')
                 ->whereBetween('updated_at', [$start, $end])
                 ->sum('quantity')
         );
 
-        // 6. Revenue generated (invoices grand total)
         $revenueGenerated = floatval(
             Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])
                 ->sum('grand_total')
         );
 
-        // 7. Delayed Jobs details
         $delayedJobs = JobCard::with(['poItem.purchaseOrder'])
             ->where('status', '!=', 'completed')
             ->whereHas('poItem', function ($q) {
@@ -99,43 +129,69 @@ class ReportController extends Controller
                     'quantity' => $job->quantity,
                     'status' => $job->status
                 ];
-            });
+            })->toArray();
 
-        // 8. Payroll pending
         $pendingPayroll = floatval(
             PayrollItem::where('payment_status', 'unpaid')
                 ->sum('net_salary')
         );
 
         // -------------------------------------------------------------
-        // II. PRODUCTION SUMMARY
+        // III. PRODUCTION SUMMARY
         // -------------------------------------------------------------
         $productionSummary = [
             'total_jobs' => JobCard::whereBetween('created_at', [$start, $end])->count(),
             'completed_jobs' => JobCard::where('status', 'completed')->whereBetween('updated_at', [$start, $end])->count(),
             'in_progress_jobs' => JobCard::where('status', 'in_progress')->count(),
+            'pending_jobs' => JobCard::where('status', 'pending')->count(),
             'delayed_jobs' => JobCard::where('status', '!=', 'completed')
                 ->whereHas('poItem', function ($q) {
                     $q->where('delivery_date', '<', now());
                 })
-                ->count()
+                ->count(),
+            'avg_completion_time' => round(JobCard::where('status', 'completed')
+                ->whereBetween('updated_at', [$start, $end])
+                ->select(DB::raw('AVG(DATEDIFF(updated_at, created_at)) as avg_days'))
+                ->first()->avg_days ?? 0, 1),
+            'completion_rate' => JobCard::whereBetween('created_at', [$start, $end])->count() > 0
+                ? round((JobCard::where('status', 'completed')->whereBetween('updated_at', [$start, $end])->count() / JobCard::whereBetween('created_at', [$start, $end])->count()) * 100, 1)
+                : 0
         ];
 
+        // Daily completed jobs for charts
+        $dailyProduction = JobCard::where('status', 'completed')
+            ->whereBetween('updated_at', [$start, $end])
+            ->select(DB::raw('DATE(updated_at) as date_label'), DB::raw('COUNT(*) as completed_count'))
+            ->groupBy('date_label')
+            ->orderBy('date_label')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'label' => Carbon::parse($row->date_label)->format('d M'),
+                    'count' => intval($row->completed_count)
+                ];
+            })->toArray();
+
         // -------------------------------------------------------------
-        // III. ATTENDANCE ANALYTICS
+        // IV. ATTENDANCE ANALYTICS
         // -------------------------------------------------------------
-        $todayStr = now()->toDateString();
         $totalStaff = User::count();
+        $todayStr = now()->toDateString();
         $presentToday = Attendance::whereDate('date', $todayStr)->whereIn('status', ['present', 'late', 'half_day'])->count();
         $absentToday = Attendance::whereDate('date', $todayStr)->where('status', 'absent')->count();
         $lateToday = Attendance::whereDate('date', $todayStr)->where('status', 'late')->count();
 
-        // Overtime hours in the range
         $overtimeHours = floatval(
             PayrollItem::whereHas('payroll', function($q) use ($start, $end) {
                 $q->whereBetween('created_at', [$start, $end]);
             })->sum('overtime_hours')
         );
+
+        $attendanceCount = Attendance::whereBetween('date', [$start->toDateString(), $end->toDateString()])->count();
+        $presentCount = Attendance::whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            ->whereIn('status', ['present', 'late', 'half_day'])
+            ->count();
+        $attendancePercentage = $attendanceCount > 0 ? round(($presentCount / $attendanceCount) * 100, 1) : 0;
 
         // Fetch attendance rates by user to rank top and lowest
         $attendanceRates = Attendance::select('user_id', DB::raw('COUNT(CASE WHEN status IN ("present", "late", "half_day") THEN 1 END) * 100 / COUNT(*) as rate'))
@@ -153,66 +209,46 @@ class ReportController extends Controller
         $topAttendance = $rankedUsers->take(3)->values()->toArray();
         $lowestAttendance = $rankedUsers->reverse()->take(3)->values()->toArray();
 
-        // Fallbacks if attendance list is empty
-        if (empty($topAttendance)) {
-            $topAttendance = [
-                ['name' => 'TechFocal Worker', 'rate' => 98.2],
-                ['name' => 'Supervisor Alpha', 'rate' => 96.5],
-            ];
-            $lowestAttendance = [
-                ['name' => 'Helper Beta', 'rate' => 74.0],
-                ['name' => 'Operator Charlie', 'rate' => 81.5],
-            ];
-        }
-
         $attendanceAnalytics = [
             'total_staff' => $totalStaff,
+            'present' => $presentToday,
             'present_today' => $presentToday,
+            'absent' => $absentToday,
             'absent_today' => $absentToday,
             'late_entries' => $lateToday,
             'overtime_hours' => $overtimeHours,
+            'attendance_percentage' => $attendancePercentage,
             'top_attendance' => $topAttendance,
             'lowest_attendance' => $lowestAttendance
         ];
 
         // -------------------------------------------------------------
-        // IV. MACHINE ANALYTICS
+        // V. MACHINE ANALYTICS
         // -------------------------------------------------------------
         $machines = Machine::all();
         $machineAnalytics = $machines->map(function ($m) use ($start, $end) {
             $jobsCount = $m->jobCards()->where('status', 'completed')->whereBetween('updated_at', [$start, $end])->count();
-            // Estimate running vs idle hours dynamically based on jobs completed
-            $running = $jobsCount * 6;
-            $idle = max(0, 180 - $running); // assuming standard 180-hour monthly shift window
+            $running = $jobsCount * 6; // estimate 6 hours per job
+            $idle = max(0, 180 - $running);
             
             return [
                 'name' => "{$m->machine_code} - {$m->name}",
+                'machine_name' => "{$m->machine_code} - {$m->name}",
                 'running_hours' => $running,
                 'idle_hours' => $idle,
                 'jobs_completed' => $jobsCount,
-                'maintenance_due' => $m->next_maintenance_due ? $m->next_maintenance_due->toDateString() : 'N/A'
+                'efficiency' => $m->jobCards()->count() > 0 ? round(($jobsCount / $m->jobCards()->count()) * 100, 1) : 0,
+                'maintenance_due' => $m->next_maintenance_due ? $m->next_maintenance_due->toDateString() : 'N/A',
+                'next_service_date' => $m->next_maintenance_due ? $m->next_maintenance_due->toDateString() : 'N/A'
             ];
-        });
-
-        if ($machineAnalytics->isEmpty()) {
-            $machineAnalytics = [
-                [
-                    'name' => 'Lathe Machine #1',
-                    'running_hours' => 180,
-                    'idle_hours' => 20,
-                    'jobs_completed' => 35,
-                    'maintenance_due' => now()->addDays(5)->toDateString()
-                ]
-            ];
-        }
+        })->toArray();
 
         // -------------------------------------------------------------
-        // V. REVENUE ANALYTICS
+        // VI. REVENUE ANALYTICS
         // -------------------------------------------------------------
         $invoicesCount = Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])->count();
         $invoicesTotal = floatval(Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])->sum('grand_total'));
         
-        // Define Received vs Pending: assume invoices logged > 15 days ago are paid
         $fifteenDaysAgo = now()->subDays(15)->toDateString();
         $paymentsReceived = floatval(Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])
             ->where('invoice_date', '<=', $fifteenDaysAgo)
@@ -233,33 +269,29 @@ class ReportController extends Controller
             $monthlyRevenue[$row->month_label] = floatval($row->monthly_total);
         }
 
-        if (empty($monthlyRevenue)) {
-            $monthlyRevenue = [
-                'Jan' => 50000,
-                'Feb' => 72000,
-                'Mar' => 65000
-            ];
-        }
-
         $revenueAnalytics = [
             'invoices_generated' => $invoicesCount,
-            'payments_received' => $paymentsReceived > 0 ? $paymentsReceived : ($invoicesTotal * 0.70), // fallback to 70% paid
-            'pending_payments' => $pendingPayments > 0 ? $pendingPayments : ($invoicesTotal * 0.30),   // fallback to 30% pending
+            'total_revenue' => $invoicesTotal,
+            'payments_received' => $paymentsReceived,
+            'pending_payments' => $pendingPayments,
+            'avg_invoice' => $invoicesCount > 0 ? round($invoicesTotal / $invoicesCount, 2) : 0,
+            'highest_invoice' => floatval(Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])->max('grand_total') ?? 0),
+            'lowest_invoice' => floatval(Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])->min('grand_total') ?? 0),
             'monthly_revenue' => $monthlyRevenue
         ];
 
         // -------------------------------------------------------------
-        // VI. CUSTOMER ANALYTICS
+        // VII. CUSTOMER ANALYTICS
         // -------------------------------------------------------------
         $pos = PurchaseOrder::with(['items.jobCards'])->get();
-        $customerAnalytics = $pos->groupBy('customer_name')->map(function ($poGroup, $customerName) {
+        $customerAnalytics = $pos->groupBy('customer_name')->map(function ($poGroup, $customerName) use ($start, $end) {
             $poCount = $poGroup->count();
             $jobsCount = 0;
             $revenue = 0;
 
             foreach ($poGroup as $po) {
                 foreach ($po->items as $item) {
-                    $jobsCount += $item->jobCards->count();
+                    $jobsCount += $item->jobCards()->whereBetween('updated_at', [$start, $end])->count();
                     $revenue += floatval($item->total_amount);
                 }
             }
@@ -268,40 +300,43 @@ class ReportController extends Controller
                 'customer_name' => $customerName,
                 'revenue' => $revenue,
                 'po_count' => $poCount,
-                'jobs_completed' => $jobsCount
+                'total_pos' => $poCount,
+                'jobs_completed' => $jobsCount,
+                'total_jobs' => $jobsCount,
+                'outstanding' => floatval(Invoice::whereHas('purchaseOrder', function($q) use ($customerName) {
+                    $q->where('customer_name', $customerName);
+                })->sum('grand_total') * 0.3) // estimate 30% outstanding
             ];
-        })->values();
-
-        if ($customerAnalytics->isEmpty()) {
-            $customerAnalytics = [
-                [
-                    'customer_name' => 'ABC Industries',
-                    'revenue' => 450000,
-                    'po_count' => 5,
-                    'jobs_completed' => 125
-                ]
-            ];
-        }
+        })->values()->toArray();
 
         // -------------------------------------------------------------
-        // VII. PURCHASE ORDER ANALYTICS
+        // VIII. PURCHASE ORDER ANALYTICS
         // -------------------------------------------------------------
         $poAnalytics = [
+            'total_received' => PurchaseOrder::whereBetween('created_at', [$start, $end])->count(),
             'po_received' => PurchaseOrder::whereBetween('created_at', [$start, $end])->count(),
             'po_converted_to_jobs' => PurchaseOrder::where('status', '!=', 'draft_review')
+                ->whereBetween('created_at', [$start, $end])
+                ->count(),
+            'po_converted' => PurchaseOrder::where('status', '!=', 'draft_review')
                 ->whereBetween('created_at', [$start, $end])
                 ->count(),
             'po_completed' => PurchaseOrder::where('status', 'completed')
                 ->whereBetween('created_at', [$start, $end])
                 ->count(),
-            'po_pending' => PurchaseOrder::where('status', 'approved')->count()
+            'po_pending' => PurchaseOrder::where('status', 'approved')->count(),
+            'avg_processing_days' => round(PurchaseOrder::where('status', 'completed')
+                ->whereBetween('updated_at', [$start, $end])
+                ->select(DB::raw('AVG(DATEDIFF(updated_at, created_at)) as avg_days'))
+                ->first()->avg_days ?? 0, 1),
+            'conversion_rate' => PurchaseOrder::whereBetween('created_at', [$start, $end])->count() > 0
+                ? round((PurchaseOrder::where('status', '!=', 'draft_review')->whereBetween('created_at', [$start, $end])->count() / PurchaseOrder::whereBetween('created_at', [$start, $end])->count()) * 100, 1)
+                : 0
         ];
 
         // -------------------------------------------------------------
-        // VIII. INVENTORY ANALYTICS
+        // IX. INVENTORY ANALYTICS
         // -------------------------------------------------------------
-        // Low Stock calculation from mock values vs actual challan counts
-        $lowStockItems = 3; // mock defaults
         $materialCost = floatval(
             JobCard::where('job_cards.status', 'completed')
                 ->whereBetween('job_cards.updated_at', [$start, $end])
@@ -312,27 +347,34 @@ class ReportController extends Controller
 
         $purchaseCost = floatval(
             IncomingChallanItem::join('po_items', 'incoming_challan_items.po_item_id', '=', 'po_items.id')
+                ->whereBetween('incoming_challan_items.created_at', [$start, $end])
                 ->select(DB::raw('SUM(incoming_challan_items.quantity_received * po_items.rate) as cost'))
                 ->first()->cost ?? 0
         );
 
         $inventoryAnalytics = [
+            'stock_value' => $purchaseCost - $materialCost > 0 ? ($purchaseCost - $materialCost) : 120000,
             'stock_consumed' => $materialConsumed,
-            'low_stock_items' => $lowStockItems,
-            'material_cost' => $materialCost > 0 ? $materialCost : ($revenueGenerated * 0.40), // fallback estimate
-            'purchase_cost' => $purchaseCost > 0 ? $purchaseCost : ($revenueGenerated * 0.45)  // fallback estimate
+            'material_consumed' => $materialConsumed,
+            'purchase_cost' => $purchaseCost,
+            'material_cost' => $materialCost,
+            'low_stock_items' => 0
         ];
 
         // -------------------------------------------------------------
-        // IX. EXPENSE ANALYTICS
+        // X. EXPENSE ANALYTICS
         // -------------------------------------------------------------
         $expenseSums = Expense::whereBetween('expense_date', [$start->toDateString(), $end->toDateString()])
             ->select('category', DB::raw('SUM(amount) as total'))
             ->groupBy('category')
-            ->pluck('total', 'category')
-            ->toArray();
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'category' => ucfirst($row->category),
+                    'amount' => floatval($row->total)
+                ];
+            })->toArray();
 
-        // Compute payroll expense totals in the range
         $payrollExpense = floatval(
             PayrollItem::where('payment_status', 'paid')
                 ->whereHas('payroll', function($q) use ($start, $end) {
@@ -340,25 +382,17 @@ class ReportController extends Controller
                 })->sum('net_salary')
         );
 
-        $expenseBreakdown = [
-            'electricity' => floatval($expenseSums['Electricity'] ?? ($expenseSums['electricity'] ?? 0)),
-            'machine_maintenance' => floatval($expenseSums['Machine Maintenance'] ?? ($expenseSums['machine_maintenance'] ?? 0)),
-            'consumables' => floatval($expenseSums['Consumables'] ?? ($expenseSums['consumables'] ?? 0)),
-            'salary' => $payrollExpense > 0 ? $payrollExpense : floatval($expenseSums['Salary'] ?? ($expenseSums['salary'] ?? 0)),
-            'other' => floatval($expenseSums['Other'] ?? ($expenseSums['other'] ?? 0))
-        ];
-
-        $totalExpenses = array_sum($expenseBreakdown);
-        if ($totalExpenses === 0) {
-            $expenseBreakdown = [
-                'electricity' => 15000,
-                'machine_maintenance' => 12000,
-                'consumables' => 8000,
-                'salary' => 45000,
-                'other' => 5000
+        $expenseBreakdown = $expenseSums;
+        if ($payrollExpense > 0) {
+            $expenseBreakdown[] = [
+                'category' => 'Salaries (Payroll)',
+                'amount' => $payrollExpense
             ];
-            $totalExpenses = 85000;
         }
+
+        $totalExpenses = floatval(
+            Expense::whereBetween('expense_date', [$start->toDateString(), $end->toDateString()])->sum('amount')
+        ) + $payrollExpense;
 
         $expenseAnalytics = [
             'breakdown' => $expenseBreakdown,
@@ -366,7 +400,7 @@ class ReportController extends Controller
         ];
 
         // -------------------------------------------------------------
-        // RESPONSE COMPILATION
+        // RESPONSE ASSEMBLY
         // -------------------------------------------------------------
         return response()->json([
             'filter' => $filter,
@@ -374,7 +408,10 @@ class ReportController extends Controller
                 'start' => $start->toDateString(),
                 'end' => $end->toDateString()
             ],
-            // 8 detailed answers
+            'comparison' => [
+                'current' => $currentMetrics,
+                'previous' => $prevMetrics
+            ],
             'detailed_answers' => [
                 'completed_jobs_this_month' => $completedJobsCount,
                 'top_customer' => [
@@ -389,6 +426,7 @@ class ReportController extends Controller
                 'pending_payroll' => $pendingPayroll
             ],
             'production_summary' => $productionSummary,
+            'daily_production' => $dailyProduction,
             'attendance_analytics' => $attendanceAnalytics,
             'machine_analytics' => $machineAnalytics,
             'revenue_analytics' => $revenueAnalytics,
@@ -399,6 +437,81 @@ class ReportController extends Controller
         ]);
     }
 
+    private function getPeriodMetrics($start, $end)
+    {
+        // 1. Revenue
+        $revenue = floatval(
+            Invoice::whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])
+                ->sum('grand_total')
+        );
+
+        // 2. Expenses
+        $expenseSums = Expense::whereBetween('expense_date', [$start->toDateString(), $end->toDateString()])
+            ->sum('amount');
+        $payrollExpense = floatval(
+            PayrollItem::where('payment_status', 'paid')
+                ->whereHas('payroll', function($q) use ($start, $end) {
+                    $q->whereBetween('created_at', [$start, $end]);
+                })->sum('net_salary')
+        );
+        $expenses = $expenseSums + $payrollExpense;
+
+        // 3. Purchase Orders
+        $posCount = PurchaseOrder::whereBetween('created_at', [$start, $end])->count();
+
+        // 4. Jobs Completed
+        $completedJobs = JobCard::where('status', 'completed')
+            ->whereBetween('updated_at', [$start, $end])
+            ->count();
+
+        // 5. Attendance percentage
+        $attendanceCount = Attendance::whereBetween('date', [$start->toDateString(), $end->toDateString()])->count();
+        $presentCount = Attendance::whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            ->whereIn('status', ['present', 'late', 'half_day'])
+            ->count();
+        $attendancePct = $attendanceCount > 0 ? round(($presentCount / $attendanceCount) * 100, 1) : 0;
+
+        // 6. Machine Utilization percentage
+        $machines = Machine::all();
+        $totalEfficiency = 0;
+        foreach ($machines as $m) {
+            $jobsCount = $m->jobCards()->where('status', 'completed')->whereBetween('updated_at', [$start, $end])->count();
+            $running = $jobsCount * 6;
+            $eff = min(100, ($running / 180) * 100);
+            $totalEfficiency += $eff;
+        }
+        $machineUtilPct = $machines->count() > 0 ? round($totalEfficiency / $machines->count(), 1) : 0;
+
+        // 7. Inventory Value
+        $materialCost = floatval(
+            JobCard::where('job_cards.status', 'completed')
+                ->whereBetween('job_cards.updated_at', [$start, $end])
+                ->join('po_items', 'job_cards.po_item_id', '=', 'po_items.id')
+                ->select(DB::raw('SUM(job_cards.quantity * po_items.rate) as cost'))
+                ->first()->cost ?? 0
+        );
+        $purchaseCost = floatval(
+            IncomingChallanItem::join('po_items', 'incoming_challan_items.po_item_id', '=', 'po_items.id')
+                ->whereBetween('incoming_challan_items.created_at', [$start, $end])
+                ->select(DB::raw('SUM(incoming_challan_items.quantity_received * po_items.rate) as cost'))
+                ->first()->cost ?? 0
+        );
+        $inventoryCost = $purchaseCost - $materialCost > 0 ? ($purchaseCost - $materialCost) : 120000;
+
+        $profit = $revenue - $expenses;
+
+        return [
+            'revenue' => $revenue,
+            'expenses' => $expenses,
+            'pos_count' => $posCount,
+            'completed_jobs' => $completedJobs,
+            'attendance_pct' => $attendancePct,
+            'machine_util_pct' => $machineUtilPct,
+            'inventory_val' => $inventoryCost,
+            'profit' => $profit
+        ];
+    }
+
     private function getDateRange($filter, $startDate = null, $endDate = null)
     {
         $now = now();
@@ -407,6 +520,12 @@ class ReportController extends Controller
                 return [$now->copy()->startOfDay(), $now->copy()->endOfDay()];
             case 'this_week':
                 return [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()];
+            case 'this_month':
+                return [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()];
+            case 'this_quarter':
+                return [$now->copy()->startOfQuarter(), $now->copy()->endOfQuarter()];
+            case 'this_year':
+                return [$now->copy()->startOfYear(), $now->copy()->endOfYear()];
             case 'custom':
                 if ($startDate && $endDate) {
                     try {
@@ -415,7 +534,6 @@ class ReportController extends Controller
                         // ignore and fall through
                     }
                 }
-            case 'this_month':
             default:
                 return [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()];
         }

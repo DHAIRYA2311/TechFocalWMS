@@ -246,6 +246,9 @@ function getAuditLogDiff(log) {
   const rev = log.revised_version;
   if (!orig || !rev) return diffs;
 
+  if (trimText(orig.status) !== trimText(rev.status)) {
+    diffs.push(`Status changed from "${orig.status}" to "${rev.status}"`);
+  }
   if (trimText(orig.po_date) !== trimText(rev.po_date)) {
     diffs.push(`PO Date changed from ${orig.po_date || 'N/A'} to ${rev.po_date || 'N/A'}`);
   }
@@ -744,6 +747,53 @@ export default function PurchaseOrders() {
       const msg = err.response?.data?.message || 'Verification failed. Please review inputs.';
       setFeedback({ type: 'danger', message: msg });
       setApproving(false);
+    }
+  };
+
+  const handleUpdatePoStatus = async (e, newStatus) => {
+    e.preventDefault();
+    if (newStatus === 'rejected') {
+      const reason = window.prompt("Please enter a reason/remark for declining this Purchase Order:");
+      if (reason === null) return; // cancelled
+      if (!reason.trim()) {
+        alert("A reason is required to decline.");
+        return;
+      }
+      setApproving(true);
+      setFeedback(null);
+      try {
+        const response = await axios.put(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}/status`, {
+          status: newStatus,
+          remarks: reason
+        });
+        setFeedback({ type: 'success', message: response.data.message });
+        setTimeout(() => {
+          handleCloseReview();
+          fetchPos();
+        }, 1000);
+      } catch (err) {
+        console.error(err);
+        setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to update status.' });
+        setApproving(false);
+      }
+    } else {
+      if (!window.confirm("Are you sure you want to Accept & Approve this Purchase Order? Floor Job Cards will be generated automatically.")) return;
+      setApproving(true);
+      setFeedback(null);
+      try {
+        const response = await axios.put(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}/status`, {
+          status: newStatus
+        });
+        setFeedback({ type: 'success', message: response.data.message });
+        setTimeout(() => {
+          handleCloseReview();
+          fetchPos();
+        }, 1000);
+      } catch (err) {
+        console.error(err);
+        setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to approve status.' });
+        setApproving(false);
+      }
     }
   };
 
@@ -1282,9 +1332,11 @@ export default function PurchaseOrders() {
                   </td>
                   {canEdit && (
                     <td style={{ padding: '6px', textAlign: 'center' }}>
-                      <button type="button" onClick={() => handleDeleteItemRow(idx)} style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: '4px' }}>
-                        <Trash2 size={16} />
-                      </button>
+                      {editingPo.items.length > 1 && (
+                        <button type="button" onClick={() => handleDeleteItemRow(idx)} style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: '4px' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -1671,6 +1723,31 @@ export default function PurchaseOrders() {
                         Verify & Approve
                       </button>
                     )}
+                    {/* === UNDER REVIEW: Accept / Decline === */}
+                    {selectedPo.status === 'marked_review' && (
+                      <>
+                        <button 
+                          type="button" 
+                          className="form-button" 
+                          onClick={(e) => handleUpdatePoStatus(e, 'approved')}
+                          disabled={approving}
+                          style={{ width: 'auto', marginTop: 0, padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', height: '36px', fontSize: '13px', backgroundColor: 'var(--color-success)' }}
+                        >
+                          {approving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                          Accept & Approve
+                        </button>
+                        <button 
+                          type="button" 
+                          className="form-button" 
+                          onClick={(e) => handleUpdatePoStatus(e, 'rejected')}
+                          disabled={approving}
+                          style={{ width: 'auto', marginTop: 0, padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', height: '36px', fontSize: '13px', backgroundColor: 'var(--color-danger)' }}
+                        >
+                          {approving ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                          Decline PO
+                        </button>
+                      </>
+                    )}
                     {/* === EDIT PO === */}
                     <button
                       type="button"
@@ -2026,6 +2103,46 @@ export default function PurchaseOrders() {
           </div>
 
         </div>
+
+        {/* Maximize Line Items Modal */}
+        {isLineItemsMaximized && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            backgroundColor: '#f8fafc',
+            display: 'flex', flexDirection: 'column',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid var(--color-border)',
+              backgroundColor: 'var(--color-card-bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
+            }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', margin: 0, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Maximize2 size={18} style={{ color: 'var(--color-primary)' }} />
+                Expanded Workspace: Line Items
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Changes sync live to table · Save PO to persist to database</span>
+                <button
+                  onClick={() => setIsLineItemsMaximized(false)}
+                  style={{
+                    background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
+                    borderRadius: '8px', padding: '8px 12px', fontSize: '13px', fontWeight: '600',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                    color: 'var(--color-text-main)'
+                  }}
+                >
+                  <X size={16} /> Close Fullscreen
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: '24px', flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {renderLineItemsGrid(true)}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2314,46 +2431,6 @@ export default function PurchaseOrders() {
         )}
       </div>
 
-      {/* ── Line Item Expand Modal ── */}
-      {/* Maximize Line Items Modal */}
-      {isLineItemsMaximized && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          backgroundColor: 'var(--color-bg-body)',
-          display: 'flex', flexDirection: 'column',
-          animation: 'fadeIn 0.2s ease-out'
-        }}>
-          <div style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid var(--color-border)',
-            backgroundColor: 'var(--color-card-bg)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
-          }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '700', margin: 0, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Maximize2 size={18} style={{ color: 'var(--color-primary)' }} />
-              Expanded Workspace: Line Items
-            </h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Changes sync live to table · Save PO to persist to database</span>
-              <button
-                onClick={() => setIsLineItemsMaximized(false)}
-                style={{
-                  background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
-                  borderRadius: '8px', padding: '8px 12px', fontSize: '13px', fontWeight: '600',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
-                  color: 'var(--color-text-main)'
-                }}
-              >
-                <X size={16} /> Close Fullscreen
-              </button>
-            </div>
-          </div>
-          <div style={{ padding: '24px', flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {renderLineItemsGrid(true)}
-          </div>
-        </div>
-      )}
 
     </div>
   );
