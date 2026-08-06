@@ -123,6 +123,12 @@ export default function DevicePairingSettings() {
   };
 
   const [customApiUrl, setCustomApiUrl] = useState(() => {
+    // If we have a VITE_API_URL defined in the environment (e.g. Vercel deployment), use it!
+    if (import.meta.env.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+    
+    // Fallback for local development
     const hostname = window.location.hostname;
     const protocol = window.location.protocol;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -448,3 +454,4 @@ export default function DevicePairingSettings() {
     </div>
   );
 }
+
