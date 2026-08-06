@@ -1,18 +1,41 @@
-FROM richarvey/nginx-php-fpm:3.1.6
+FROM php:8.2-apache
 
-# Copy project files
-COPY . /var/www/html
+# Install dependencies and extensions
+RUN apt-get update && apt-get install -y \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    zip \
+    unzip \
+    git \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Environment variables
-ENV WEBROOT /var/www/html/public
-ENV APP_ENV production
-ENV COMPOSER_ALLOW_SUPERUSER 1
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd pdo pdo_mysql pdo_pgsql pcntl
 
-# Install composer dependencies
+# Enable Apache mod_rewrite
+RUN a2enmod rewrite
+
+# Update Apache DocumentRoot to point to Laravel's public folder
+ENV APACHE_DOCUMENT_ROOT /var/www/html/public
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
+RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Copy the application code
+COPY . .
+
+# Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Correct folder permissions for Laravel
+# Fix permissions for Laravel
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
+# Start Apache
 EXPOSE 80
