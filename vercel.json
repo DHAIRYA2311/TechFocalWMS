@@ -1,0 +1,10 @@
+{
+  "services": {
+    "frontend": {
+      "rootDirectory": "frontend"
+    },
+    "website": {
+      "rootDirectory": "website"
+    }
+  }
+}
