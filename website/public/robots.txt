@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://techfocal-dhairya2311.lovable.app/sitemap.xml

@@ -1,0 +1,20 @@
+# TechFocal Enterprises LLP
+
+> Premium engineering and precision manufacturing partner for global manufacturers. TechFocal delivers high-quality machining, fabrication, assembly, and end-to-end manufacturing solutions from concept to production.
+
+TechFocal Enterprises LLP is a modern engineering company specializing in precision manufacturing services for aerospace, automotive, industrial equipment, and heavy-machinery sectors. The website showcases TechFocal's capabilities, engineering process, finished-work gallery, leadership team, and contact channels for requesting quotations.
+
+## Pages
+
+- [Home](/): Overview of TechFocal's engineering capabilities, key metrics, services, and call-to-action to request a quote.
+- [About](/about): Company story, mission, values, and what makes TechFocal a trusted manufacturing partner.
+- [Services](/services): Detailed service offerings including precision machining, fabrication, assembly, quality inspection, and custom manufacturing.
+- [Process](/process): Step-by-step walkthrough of TechFocal's manufacturing process from design review to final delivery.
+- [Team](/partners): Leadership and management team behind TechFocal Enterprises LLP.
+- [Gallery](/gallery): Portfolio of finished components, workshop imagery, and completed engineering projects.
+- [Contact](/contact): Contact information, address, phone, email, and inquiry form for customer outreach.
+- [Request a Quote](/quote): Interactive quotation form with project details, material requirements, file uploads, and contact information.
+
+## Optional
+
+- [Sitemap](/sitemap.xml): Machine-readable list of public pages for search engines and crawlers.
