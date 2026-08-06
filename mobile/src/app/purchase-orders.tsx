@@ -20,7 +20,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
 import * as WebBrowser from 'expo-web-browser';
+import TechFocalLoader from '@/components/tech-focal-loader';
+
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -128,7 +131,7 @@ export default function PurchaseOrdersScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/purchase-orders/${id}`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/purchase-orders/${id}`, { headers });
       setSelectedPo(response.data);
     } catch (err) {
       console.warn('Failed to refresh selected PO details:', err);
@@ -148,7 +151,7 @@ export default function PurchaseOrdersScreen() {
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/purchase-orders`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/purchase-orders`, { headers });
       setPos(response.data);
     } catch (err: any) {
       console.error('Failed to load purchase orders:', err);
@@ -162,7 +165,7 @@ export default function PurchaseOrdersScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/purchase-orders/revisions`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/purchase-orders/revisions`, { headers });
       setRevisions(response.data);
     } catch (err: any) {
       console.warn('Failed to load PO revisions:', err);
@@ -173,7 +176,7 @@ export default function PurchaseOrdersScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/settings`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/settings`, { headers });
       if (response.data && response.data.po_last_fetch_at) {
         setLastFetchTime(response.data.po_last_fetch_at);
       }
@@ -199,7 +202,7 @@ export default function PurchaseOrdersScreen() {
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/purchase-orders/${po.id}`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/purchase-orders/${po.id}`, { headers });
       setSelectedPo(response.data);
     } catch (err: any) {
       console.error(err);
@@ -398,8 +401,7 @@ export default function PurchaseOrdersScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {loading && pos.length === 0 ? (
           <View style={styles.centerSpinner}>
-            <ActivityIndicator size="large" color="#2563eb" />
-            <Text style={styles.spinnerText}>Loading inbox POs...</Text>
+            <TechFocalLoader />
           </View>
         ) : filteredPos.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -1257,3 +1259,4 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 });
+

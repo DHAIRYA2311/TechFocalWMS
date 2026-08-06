@@ -9,6 +9,7 @@ use App\Models\JobCard;
 use App\Models\PurchaseOrder;
 use App\Models\PoItem;
 use App\Services\ChallanParserService;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -110,15 +111,15 @@ class IncomingChallanController extends Controller
             return response()->json(['message' => 'Unauthorized. You do not have permission to create incoming challans.'], 403);
         }
 
-        $request->validate([
-            'challan_number' => 'required|string',
+        $validated = $request->validate([
+            'challan_number' => 'required|string|max:100',
             'challan_date' => 'required|date',
-            'purchase_order_id' => 'required|exists:purchase_orders,id',
-            'pdf_path' => 'nullable|string',
-            'remarks' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.po_item_id' => 'required|exists:po_items,id',
-            'items.*.quantity_received' => 'required|numeric|min:0.01',
+            'purchase_order_id' => 'required|integer|exists:purchase_orders,id',
+            'pdf_path' => 'nullable|string|max:1000',
+            'remarks' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1|max:100',
+            'items.*.po_item_id' => 'required|integer|exists:po_items,id',
+            'items.*.quantity_received' => 'required|numeric|min:0.01|max:99999999',
         ]);
 
         DB::beginTransaction();
@@ -126,16 +127,16 @@ class IncomingChallanController extends Controller
         try {
             // 1. Create the Challan record
             $challan = IncomingChallan::create([
-                'challan_number' => $request->challan_number,
-                'challan_date' => $request->challan_date,
-                'purchase_order_id' => $request->purchase_order_id,
-                'pdf_path' => $request->pdf_path,
+                'challan_number' => $validated['challan_number'],
+                'challan_date' => $validated['challan_date'],
+                'purchase_order_id' => $validated['purchase_order_id'],
+                'pdf_path' => $validated['pdf_path'] ?? null,
                 'received_by' => auth()->id() ?: 1, // Fallback to user ID 1 for testing
-                'remarks' => $request->remarks,
+                'remarks' => $validated['remarks'] ?? null,
             ]);
 
             // 2. Create challan items & corresponding Job Cards
-            foreach ($request->items as $item) {
+            foreach ($validated['items'] as $item) {
                 $qtyReceived = floatval($item['quantity_received']);
 
                 // Track total received so far against ordered quantity
@@ -191,6 +192,14 @@ class IncomingChallanController extends Controller
 
             DB::commit();
 
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager', 'partner'],
+                'Material Received 📦',
+                "Incoming Challan {$challan->challan_number} has been registered.",
+                'inventory_received',
+                ['challan_id' => $challan->id]
+            );
+
             return response()->json([
                 'message' => 'Material receipt registered successfully. Floor Job Cards generated.',
                 'challan' => $challan->load('items')
@@ -215,13 +224,13 @@ class IncomingChallanController extends Controller
 
         $challan = IncomingChallan::findOrFail($id);
 
-        $request->validate([
-            'challan_number' => 'required|string',
+        $validated = $request->validate([
+            'challan_number' => 'required|string|max:100',
             'challan_date' => 'required|date',
-            'remarks' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.po_item_id' => 'required|exists:po_items,id',
-            'items.*.quantity_received' => 'required|numeric|min:0.01',
+            'remarks' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1|max:100',
+            'items.*.po_item_id' => 'required|integer|exists:po_items,id',
+            'items.*.quantity_received' => 'required|numeric|min:0.01|max:99999999',
         ]);
 
         DB::beginTransaction();
@@ -229,14 +238,17 @@ class IncomingChallanController extends Controller
         try {
             // Update details
             $challan->update([
-                'challan_number' => $request->challan_number,
-                'challan_date' => $request->challan_date,
-                'remarks' => $request->remarks,
+                'challan_number' => $validated['challan_number'],
+                'challan_date' => $validated['challan_date'],
+                'remarks' => $validated['remarks'] ?? null,
             ]);
 
             $processedItemIds = [];
 
-            foreach ($request->items as $item) {
+            // We only need $request->items below for iterating but let's change it to $validated
+            $requestItems = $validated['items'];
+
+            foreach ($validated['items'] as $item) {
                 $qtyReceived = floatval($item['quantity_received']);
                 $poItemId = $item['po_item_id'];
                 
@@ -392,14 +404,14 @@ class IncomingChallanController extends Controller
 
         $challan = IncomingChallan::findOrFail($id);
 
-        $request->validate([
-            'delete_reason' => 'nullable|string'
+        $validated = $request->validate([
+            'delete_reason' => 'nullable|string|max:1000'
         ]);
 
         try {
             $challan->update([
                 'deleted_by' => auth()->id() ?: 1,
-                'delete_reason' => $request->delete_reason,
+                'delete_reason' => $validated['delete_reason'] ?? null,
             ]);
 
             $challan->delete(); // Soft delete

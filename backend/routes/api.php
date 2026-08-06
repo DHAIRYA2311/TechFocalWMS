@@ -15,24 +15,79 @@ use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\DevicePairingController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\SecurityController;
+use App\Http\Controllers\Api\IpWhitelistController;
+use App\Http\Controllers\Api\FileController;
+use App\Http\Controllers\Api\MaintenanceController;
 use App\Http\Middleware\UpdateDeviceActivity;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/devices/pair', [DevicePairingController::class, 'pair']);
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
-Route::middleware(['auth:sanctum', UpdateDeviceActivity::class])->group(function () {
+Route::middleware('throttle.auth.exponential')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login/mfa', [AuthController::class, 'verifyMfaLogin']);
+    Route::post('/auth/verify-email-otp', [AuthController::class, 'verifyEmailOtpLogin']);
+    Route::post('/devices/pair', [DevicePairingController::class, 'pair']);
+    Route::post('/forgot-password', [\App\Http\Controllers\Api\PasswordResetController::class, 'sendResetLinkEmail']);
+    Route::post('/reset-password', [\App\Http\Controllers\Api\PasswordResetController::class, 'resetPassword']);
+});
+
+Route::get('/files/download', [FileController::class, 'download'])->name('files.download')->middleware('signed');
+
+Route::get('/maintenance/status', [MaintenanceController::class, 'status']);
+Route::post('/maintenance/verify', [MaintenanceController::class, 'verify']);
+
+Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])->group(function () {
+    Route::get('/mfa/setup', [\App\Http\Controllers\Api\MfaController::class, 'setup']);
+    Route::post('/mfa/setup', [\App\Http\Controllers\Api\MfaController::class, 'verifySetup']);
+    Route::post('/mfa/disable', [\App\Http\Controllers\Api\MfaController::class, 'disable']);
+    Route::post('/mfa/dismiss', [\App\Http\Controllers\Api\MfaController::class, 'dismiss']);
+
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/workers', [AuthController::class, 'getWorkers']);
     Route::get('/search', [\App\Http\Controllers\Api\SearchController::class, 'search']);
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
     Route::get('/settings/device-pairing/session', [DevicePairingController::class, 'getSession']);
     Route::get('/settings/device-pairing/devices', [DevicePairingController::class, 'listDevices']);
     Route::delete('/settings/device-pairing/devices/{id}', [DevicePairingController::class, 'revokeDevice']);
     Route::post('/devices/register-push', [DevicePairingController::class, 'registerPush']);
 
+    Route::get('/security/logs', [SecurityController::class, 'index']);
+    Route::get('/security/stats', [SecurityController::class, 'stats']);
+    Route::get('/security/export', [SecurityController::class, 'export']);
+    Route::get('/security/sessions', [SecurityController::class, 'getActiveSessions']);
+    Route::delete('/security/sessions/{id}', [SecurityController::class, 'terminateSession']);
+
+    // IP Whitelisting
+    Route::get('/security/ip-whitelist', [IpWhitelistController::class, 'index']);
+    Route::post('/security/ip-whitelist', [IpWhitelistController::class, 'store']);
+    Route::put('/security/ip-whitelist/{id}', [IpWhitelistController::class, 'update']);
+    Route::delete('/security/ip-whitelist/{id}', [IpWhitelistController::class, 'destroy']);
+    Route::post('/security/ip-whitelist/toggle', [IpWhitelistController::class, 'toggleGlobal']);
+
+    // Personal Profile Routes
+    Route::get('/user/profile', [ProfileController::class, 'show']);
+    Route::post('/user/profile', [ProfileController::class, 'update']);
+    Route::post('/user/profile/photo', [ProfileController::class, 'uploadPhoto']);
+    Route::post('/user/password', [ProfileController::class, 'changePassword']);
+    Route::post('/user/mfa/deactivate', [ProfileController::class, 'deactivateMfa']);
+    Route::get('/user/mfa/recovery-codes', [\App\Http\Controllers\Api\MfaController::class, 'getRecoveryCodes']);
+
     // Administrative User Routes
+    Route::post('/inventory/{id}/adjust', [InventoryController::class, 'adjust']);
+    Route::post('/inventory/transfer', [InventoryController::class, 'transfer']);
+
+    // Secure File Downloads
+    Route::post('/files/signed-url', [FileController::class, 'generateSignedUrl']);
+
+    // Users (Staff)
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
     Route::put('/users/{id}', [UserController::class, 'update']);
@@ -81,6 +136,8 @@ Route::middleware(['auth:sanctum', UpdateDeviceActivity::class])->group(function
     Route::post('/settings/email/test', [SettingsController::class, 'testConnection']);
     Route::get('/settings/permissions', [SettingsController::class, 'getPermissions']);
     Route::post('/settings/permissions', [SettingsController::class, 'savePermissions']);
+    Route::get('/settings/maintenance', [MaintenanceController::class, 'getAdminSettings']);
+    Route::post('/settings/maintenance', [MaintenanceController::class, 'saveAdminSettings']);
 
     // Archive Manager Routes
     Route::get('/archive', [\App\Http\Controllers\Api\ArchiveController::class, 'index']);
@@ -135,6 +192,7 @@ Route::middleware(['auth:sanctum', UpdateDeviceActivity::class])->group(function
     // Commercial Invoice Routes
     Route::get('/invoices', [InvoiceController::class, 'index']);
     Route::get('/invoices/{id}', [InvoiceController::class, 'show']);
+    Route::get('/invoices/{id}/pdf', [InvoiceController::class, 'generatePdf']);
     Route::post('/invoices', [InvoiceController::class, 'store']);
     Route::put('/invoices/{id}', [InvoiceController::class, 'update']);
     Route::post('/invoices/{id}/cancel', [InvoiceController::class, 'cancel']);
@@ -142,12 +200,21 @@ Route::middleware(['auth:sanctum', UpdateDeviceActivity::class])->group(function
     Route::post('/invoices/{id}/record-payment', [InvoiceController::class, 'recordPayment']);
 
     Route::apiResource('expenses', ExpenseController::class);
+    Route::get('/customers/{id}/details', [CustomerController::class, 'details']);
+    Route::apiResource('customers', CustomerController::class);
 
     // Report Analytics Routes
     Route::get('/reports/analytics', [ReportController::class, 'getAnalytics']);
 
     // Notification Routes
     Route::get('/notifications', [NotificationController::class, 'index']);
-    // Note: Bind NotificationController in the imports or reference it fully
-    Route::post('/notifications/mark-read', [\App\Http\Controllers\Api\NotificationController::class, 'markAllRead']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/broadcast', [NotificationController::class, 'broadcast']);
+    Route::post('/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead']);
+
+    // Schedulers
+    Route::get('/schedulers', [App\Http\Controllers\Api\SchedulerController::class, 'index']);
+    Route::post('/schedulers/{id}/toggle', [App\Http\Controllers\Api\SchedulerController::class, 'toggle']);
+    Route::post('/schedulers/{id}/run', [App\Http\Controllers\Api\SchedulerController::class, 'run']);
 });

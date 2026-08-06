@@ -10,11 +10,43 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\BroadcastsUpdates;
+use App\Traits\LogsActivity;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes, BroadcastsUpdates;
+    use LogsActivity;
+
+    protected static function booted()
+    {
+        static::creating(function ($user) {
+            if (empty($user->photo_path)) {
+                $user->photo_path = self::getDefaultPfpForRole($user->role);
+            }
+        });
+        
+        static::updating(function ($user) {
+            if ($user->isDirty('role') && (empty($user->photo_path) || str_contains($user->photo_path, 'defaults'))) {
+                $user->photo_path = self::getDefaultPfpForRole($user->role);
+            }
+        });
+    }
+
+    protected static function getDefaultPfpForRole($role)
+    {
+        $roleMap = [
+            'admin' => 'ADMIN',
+            'partner' => 'PARTNER',
+            'manager' => 'MANAGER',
+            'supervisor' => 'MANAGER', // fallback to manager if no supervisor icon
+            'worker' => 'WORKER',
+            'helper' => 'HELPER'
+        ];
+
+        $name = $roleMap[$role] ?? 'WORKER';
+        return 'photos/defaults/' . $name . '.png';
+    }
 
     /**
      * The attributes that are mass assignable.
@@ -37,6 +69,8 @@ class User extends Authenticatable
         'archived_by',
         'deleted_by',
         'delete_reason',
+        'mfa_secret',
+        'mfa_dismissed',
     ];
 
     /**
@@ -47,6 +81,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'mfa_secret',
+        'mfa_recovery_codes',
     ];
 
     /**
@@ -68,6 +104,11 @@ class User extends Authenticatable
     public function attendances()
     {
         return $this->hasMany(Attendance::class, 'user_id');
+    }
+
+    public function jobs()
+    {
+        return $this->hasMany(JobCard::class, 'assigned_worker_id');
     }
 
     /**

@@ -27,7 +27,7 @@ export default function DevicePairingSettings() {
   const fetchSession = async (refresh = false) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/settings/device-pairing/session${refresh ? '?refresh=true' : ''}`, {
+      const response = await axios.get(`/api/settings/device-pairing/session${refresh ? '?refresh=true' : ''}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSession(response.data);
@@ -43,7 +43,7 @@ export default function DevicePairingSettings() {
   const fetchDevices = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/settings/device-pairing/devices', {
+      const response = await axios.get('/api/settings/device-pairing/devices', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDevices(response.data);
@@ -62,7 +62,7 @@ export default function DevicePairingSettings() {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      await axios.delete(`http://127.0.0.1:8000/api/settings/device-pairing/devices/${id}`, {
+      await axios.delete(`/api/settings/device-pairing/devices/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setFeedback({ type: 'success', message: 'Device access revoked successfully.' });

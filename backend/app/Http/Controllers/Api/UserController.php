@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use App\Services\SecureFileUploadService;
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
@@ -35,28 +37,37 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Only management can manage users.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6',
+            'password' => [
+                'required',
+                'string',
+                \Illuminate\Validation\Rules\Password::min(12)->letters()->mixedCase()->numbers()->symbols()
+            ],
             'role' => 'required|string|in:admin,partner,manager,supervisor,helper,worker',
             'shift' => 'nullable|string|in:day,night',
             'status' => 'required|string|in:active,inactive',
             'phone' => 'nullable|string|max:20',
             'salary' => 'nullable|numeric|min:0',
-            'extra_notes' => 'nullable|string',
+            'extra_notes' => 'nullable|string|max:2000',
         ]);
 
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $request->role,
-            'shift' => $request->input('shift', 'day'),
-            'status' => $request->status,
-            'phone' => $request->phone,
-            'salary' => $request->salary,
-            'extra_notes' => $request->extra_notes,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'role' => $validated['role'],
+            'shift' => $validated['shift'] ?? 'day',
+            'status' => $validated['status'],
+            'phone' => $validated['phone'] ?? null,
+            'salary' => $validated['salary'] ?? null,
+            'extra_notes' => $validated['extra_notes'] ?? null,
+        ]);
+
+        \App\Models\PasswordHistory::create([
+            'user_id' => $user->id,
+            'password_hash' => $user->password
         ]);
 
         return response()->json([
@@ -91,31 +102,41 @@ class UserController extends Controller
             return response()->json(['message' => 'User not found.'], 404);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'password' => 'nullable|string|min:6',
+            'password' => [
+                'nullable',
+                'string',
+                \Illuminate\Validation\Rules\Password::min(12)->letters()->mixedCase()->numbers()->symbols(),
+                new \App\Rules\NotUsedPassword($user)
+            ],
             'role' => 'required|string|in:admin,partner,manager,supervisor,helper,worker',
             'shift' => 'nullable|string|in:day,night',
             'status' => 'required|string|in:active,inactive',
             'phone' => 'nullable|string|max:20',
             'salary' => 'nullable|numeric|min:0',
-            'extra_notes' => 'nullable|string',
+            'extra_notes' => 'nullable|string|max:2000',
         ]);
 
-        $user->name = $request->name;
-        $user->email = $request->email;
-        $user->role = $request->role;
-        $user->shift = $request->input('shift', 'day');
+        $user->name = $validated['name'];
+        $user->email = $validated['email'];
+        $user->role = $validated['role'];
+        $user->shift = $validated['shift'] ?? 'day';
         
         $oldStatus = $user->status;
-        $user->status = $request->status;
-        $user->phone = $request->phone;
-        $user->salary = $request->salary;
-        $user->extra_notes = $request->extra_notes;
+        $user->status = $validated['status'];
+        $user->phone = $validated['phone'] ?? null;
+        $user->salary = $validated['salary'] ?? null;
+        $user->extra_notes = $validated['extra_notes'] ?? null;
 
-        if ($request->filled('password')) {
-            $user->password = Hash::make($request->password);
+        if (!empty($validated['password'])) {
+            $user->password = Hash::make($validated['password']);
+            
+            \App\Models\PasswordHistory::create([
+                'user_id' => $user->id,
+                'password_hash' => $user->password
+            ]);
         }
 
         $user->save();
@@ -296,21 +317,21 @@ class UserController extends Controller
         }
 
         if ($request->hasFile('photo')) {
-            // Delete old photo
-            if ($user->photo_path && \Illuminate\Support\Facades\File::exists(public_path($user->photo_path))) {
+            // Delete old photo securely via service if it's stored on public disk
+            if ($user->photo_path && str_starts_with($user->photo_path, 'photos/')) {
+                SecureFileUploadService::delete($user->photo_path, 'public');
+            } else if ($user->photo_path && \Illuminate\Support\Facades\File::exists(public_path($user->photo_path))) {
+                // Fallback for legacy photos directly in public/photos
                 \Illuminate\Support\Facades\File::delete(public_path($user->photo_path));
             }
 
-            $file = $request->file('photo');
-            $filename = 'user_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
-
-            if (!\Illuminate\Support\Facades\File::isDirectory(public_path('photos'))) {
-                \Illuminate\Support\Facades\File::makeDirectory(public_path('photos'), 0755, true, true);
+            try {
+                $path = SecureFileUploadService::upload($request->file('photo'), 'photos', 'public');
+                $user->photo_path = $path; // 'photos/filename.jpg'
+                $user->save();
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Failed to upload photo: ' . $e->getMessage()], 400);
             }
-
-            $file->move(public_path('photos'), $filename);
-            $user->photo_path = 'photos/' . $filename;
-            $user->save();
 
             return response()->json([
                 'message' => 'Photo uploaded successfully.',
@@ -352,7 +373,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'delete_reason' => 'required|string|max:1000'
         ]);
 
@@ -372,7 +393,7 @@ class UserController extends Controller
 
         $user->update([
             'deleted_by' => $request->user()->id,
-            'delete_reason' => $request->delete_reason
+            'delete_reason' => $validated['delete_reason']
         ]);
 
         $user->delete();

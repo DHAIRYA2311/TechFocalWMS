@@ -19,8 +19,9 @@ import Animated, {
   FadeOut
 } from 'react-native-reanimated';
 import * as Lucide from 'lucide-react-native';
-import axios from 'axios';
+import { CheckCircle2, Factory } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
+import { offlineGet } from '@/utils/offlineApi';
 
 const Gear = Lucide.Settings as any;
 const { width, height } = Dimensions.get('window');
@@ -73,12 +74,27 @@ export default function LaunchScreen({ onComplete }: LaunchScreenProps) {
 
       try {
         if (isPaired && token && apiUrl) {
-          // Verify server ping and auth
+          // Verify server ping and auth, and prefetch dashboard metrics
           try {
-            await axios.get(`${apiUrl}/api/me`, { 
-              headers: { Authorization: `Bearer ${token}` },
-              timeout: 4000
-            });
+            const headers = { Authorization: `Bearer ${token}` };
+            
+            // Fetch everything we need in parallel
+            const [meRes, dashboardRes] = await Promise.all([
+              offlineGet(`${apiUrl}/api/me`, headers),
+              offlineGet(`${apiUrl}/api/dashboard`, headers).catch((e) => {
+                console.error("Launch screen prefetch error:", e);
+                return { data: null, offline: true };
+              })
+            ]);
+
+            if (dashboardRes.data) {
+              (global as any).__PREFETCHED_DASHBOARD = {
+                profile: meRes.data.user,
+                dashboardData: dashboardRes.data,
+                isOffline: (dashboardRes as any).offline || false
+              };
+            }
+            
             navigateSuccess = true;
           } catch (err: any) {
             if (err.response?.status === 401) {

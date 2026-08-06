@@ -11,9 +11,9 @@ import {
   Mail, 
   Shield, 
   Cpu, 
-  Loader2,
   Tablet,
-  Archive
+  Archive,
+  Wrench
 } from 'lucide-react';
 
 export default function SettingsCenter() {
@@ -32,7 +32,7 @@ export default function SettingsCenter() {
   const fetchSettings = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/settings', {
+      const response = await axios.get('/api/settings', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSettings(response.data);
@@ -51,7 +51,7 @@ export default function SettingsCenter() {
 
   const saveSettings = async (updatedValues) => {
     const token = localStorage.getItem('auth_token');
-    await axios.post('http://127.0.0.1:8000/api/settings', updatedValues, {
+    await axios.post('/api/settings', updatedValues, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setSettings(prev => {
@@ -69,10 +69,13 @@ export default function SettingsCenter() {
     { path: '/settings/email', label: 'Email Settings', icon: <Mail size={16} /> },
     { path: '/settings/devices', label: 'Mobile Device Pairing', icon: <Tablet size={16} /> },
     { path: '/settings/users-roles', label: 'Users & Roles', icon: <Shield size={16} /> },
+    { path: '/settings/security', label: 'Security & Auth', icon: <Shield size={16} /> },
     { path: '/settings/notifications', label: 'Notifications', icon: <Bell size={16} /> },
     { path: '/settings/attendance', label: 'Attendance Settings', icon: <Clock size={16} /> },
     { path: '/settings/documents', label: 'Document Settings', icon: <FileText size={16} /> },
     { path: '/settings/system', label: 'System Settings', icon: <Cpu size={16} /> },
+    { path: '/settings/maintenance', label: 'Maintenance Mode', icon: <Wrench size={16} /> },
+    { path: '/settings/schedulers', label: 'Schedulers (Cron Jobs)', icon: <Clock size={16} /> },
     { path: '/settings/archived', label: 'Archived Records', icon: <Archive size={16} /> },
   ];
 

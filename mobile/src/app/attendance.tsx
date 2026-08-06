@@ -17,8 +17,12 @@ import axios from 'axios';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
-import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
+import { useRealTime } from '@/hooks/useRealTime';
+import { offlinePost, offlineGet } from '@/utils/offlineApi';
+import TechFocalLoader from '@/components/tech-focal-loader';
+
+
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Calendar = Lucide.Calendar as any;
@@ -76,8 +80,7 @@ export default function AttendanceScreen() {
     if (!token || !apiUrl) return;
     setLoading(true);
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`${apiUrl}/api/attendance?date=${selectedDate}&shift=${selectedShift}`, { headers });
+      const res = await offlineGet(`${apiUrl}/api/attendance?date=${selectedDate}&shift=${selectedShift}`, { Authorization: `Bearer ${token}` });
       
       if (res.data && res.data.records) {
         const mapped: AttendanceRecord[] = res.data.records.map((r: any) => {
@@ -201,11 +204,11 @@ export default function AttendanceScreen() {
         notes: w.notes || null
       }));
 
-      await axios.post(`${apiUrl}/api/attendance`, {
+      await offlinePost(`${apiUrl}/api/attendance`, {
         date: selectedDate,
         shift: selectedShift,
         records: recordsToSubmit
-      }, { headers });
+      });
 
       Alert.alert('Success', 'Attendance sheet saved successfully.');
       fetchAttendance();
@@ -365,8 +368,7 @@ export default function AttendanceScreen() {
         {/* Worker Cards List */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2563eb" />
-            <Text style={styles.loadingText}>Loading attendance register...</Text>
+            <TechFocalLoader />
           </View>
         ) : filteredWorkers.length === 0 ? (
           <View style={styles.emptyContainer}>

@@ -70,13 +70,13 @@ class ArchiveController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'type' => 'required|string|in:purchase_orders,jobs,users,machines,incoming_challans',
             'id'   => 'required|integer',
         ]);
 
-        $modelClass  = $this->typeMap[$request->type]['model'];
-        $id          = $request->id;
+        $modelClass  = $this->typeMap[$validated['type']]['model'];
+        $id          = $validated['id'];
 
         // Try to find as soft-deleted first, then as archived
         $record = null;
@@ -133,13 +133,13 @@ class ArchiveController extends Controller
             ], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'type' => 'required|string|in:purchase_orders,jobs,users,machines,incoming_challans',
             'id'   => 'required|integer',
         ]);
 
-        $modelClass = $this->typeMap[$request->type]['model'];
-        $id         = $request->id;
+        $modelClass = $this->typeMap[$validated['type']]['model'];
+        $id         = $validated['id'];
 
         $record = null;
         if (method_exists($modelClass, 'onlyTrashed')) {

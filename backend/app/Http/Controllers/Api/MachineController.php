@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Machine;
 use App\Models\MachineLog;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -94,24 +95,24 @@ class MachineController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
-            'machine_code' => 'required|string|unique:machines,machine_code',
-            'name' => 'required|string',
-            'type' => 'required|string',
-            'status' => 'nullable|in:idle,busy,maintenance,inactive',
-            'default_operator_id' => 'nullable|exists:users,id',
-            'hourly_rate' => 'nullable|numeric|min:0',
-            'specifications' => 'nullable|string',
+        $validated = $request->validate([
+            'machine_code' => 'required|string|max:50|unique:machines,machine_code',
+            'name' => 'required|string|max:100',
+            'type' => 'required|string|max:50',
+            'status' => 'nullable|string|in:idle,busy,maintenance,inactive',
+            'default_operator_id' => 'nullable|integer|exists:users,id',
+            'hourly_rate' => 'nullable|numeric|min:0|max:99999999',
+            'specifications' => 'nullable|string|max:2000',
         ]);
 
         $machine = Machine::create([
-            'machine_code' => strtoupper($request->machine_code),
-            'name' => $request->name,
-            'type' => $request->type,
-            'status' => $request->status ?? 'idle',
-            'default_operator_id' => $request->default_operator_id,
-            'hourly_rate' => $request->hourly_rate,
-            'specifications' => $request->specifications,
+            'machine_code' => strtoupper($validated['machine_code']),
+            'name' => $validated['name'],
+            'type' => $validated['type'],
+            'status' => $validated['status'] ?? 'idle',
+            'default_operator_id' => $validated['default_operator_id'] ?? null,
+            'hourly_rate' => $validated['hourly_rate'] ?? null,
+            'specifications' => $validated['specifications'] ?? null,
         ]);
 
         return response()->json([
@@ -131,27 +132,27 @@ class MachineController extends Controller
 
         $machine = Machine::findOrFail($id);
 
-        $request->validate([
-            'machine_code' => 'required|string|unique:machines,machine_code,' . $id,
-            'name' => 'required|string',
-            'type' => 'required|string',
-            'status' => 'nullable|in:idle,busy,maintenance,inactive',
-            'default_operator_id' => 'nullable|exists:users,id',
-            'hourly_rate' => 'nullable|numeric|min:0',
-            'specifications' => 'nullable|string',
+        $validated = $request->validate([
+            'machine_code' => 'required|string|max:50|unique:machines,machine_code,' . $id,
+            'name' => 'required|string|max:100',
+            'type' => 'required|string|max:50',
+            'status' => 'nullable|string|in:idle,busy,maintenance,inactive',
+            'default_operator_id' => 'nullable|integer|exists:users,id',
+            'hourly_rate' => 'nullable|numeric|min:0|max:99999999',
+            'specifications' => 'nullable|string|max:2000',
         ]);
 
         // Keep status sync if busy
-        $status = $request->status ?? $machine->status;
+        $status = $validated['status'] ?? $machine->status;
         
         $machine->update([
-            'machine_code' => strtoupper($request->machine_code),
-            'name' => $request->name,
-            'type' => $request->type,
+            'machine_code' => strtoupper($validated['machine_code']),
+            'name' => $validated['name'],
+            'type' => $validated['type'],
             'status' => $status,
-            'default_operator_id' => $request->default_operator_id,
-            'hourly_rate' => $request->hourly_rate,
-            'specifications' => $request->specifications,
+            'default_operator_id' => $validated['default_operator_id'] ?? null,
+            'hourly_rate' => $validated['hourly_rate'] ?? null,
+            'specifications' => $validated['specifications'] ?? null,
         ]);
 
         return response()->json([
@@ -171,32 +172,40 @@ class MachineController extends Controller
 
         $machine = Machine::findOrFail($id);
 
-        $request->validate([
-            'log_type' => 'required|in:maintenance,breakdown,tooling_change,status_override',
-            'description' => 'required|string',
-            'cost' => 'nullable|numeric|min:0',
+        $validated = $request->validate([
+            'log_type' => 'required|string|in:maintenance,breakdown,tooling_change,status_override',
+            'description' => 'required|string|max:2000',
+            'cost' => 'nullable|numeric|min:0|max:99999999',
         ]);
 
         $log = MachineLog::create([
             'machine_id' => $id,
-            'log_type' => $request->log_type,
+            'log_type' => $validated['log_type'],
             'logged_by' => $request->user()->id,
-            'description' => $request->description,
-            'cost' => $request->cost,
+            'description' => $validated['description'],
+            'cost' => $validated['cost'] ?? null,
         ]);
 
         // Update machine status based on log
         $status = $machine->status;
         $updates = [];
 
-        if (in_array($request->log_type, ['breakdown', 'maintenance'])) {
+        if (in_array($validated['log_type'], ['breakdown', 'maintenance'])) {
             $status = 'maintenance';
             $updates['last_maintenance_date'] = Carbon::today()->toDateString();
             
             // Set next maintenance due to 90 days out if doing routine maintenance
-            if ($request->log_type === 'maintenance') {
+            if ($validated['log_type'] === 'maintenance') {
                 $updates['next_maintenance_due'] = Carbon::today()->addDays(90)->toDateString();
             }
+
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager', 'supervisor'],
+                'Machine Maintenance Alert 🔧',
+                "Machine {$machine->machine_code} has been marked for {$request->log_type}.",
+                'machine_maintenance_req',
+                ['machine_id' => $machine->id]
+            );
         } elseif ($request->log_type === 'status_override' && $machine->status === 'maintenance') {
             // Resolving maintenance manually, back to idle
             $status = 'idle';

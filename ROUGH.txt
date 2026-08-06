@@ -1,7 +1,97 @@
 eas build --platform android --profile development
 PS C:\Dhairya Amin\Projects\TechFocal\backend> php artisan schedule:wor
 
-
+jobs:archive-delivered
 
 PROMPT
  Okay so now i wanted to solve some issue in PO likewise when we go to the Line Items i need to scrioll left to right to see all the fileds or edit or anythng so for that i am planning like u add an small button like that opens an modal with the all line items fields sseen properly and then when in that it should not be save option like if i fill up in the modal the line items data than the same must shown in the list of an we are just creating these for better ux
+
+
+
+ Viewed InvoiceController.php:572-572
+Viewed invoice.blade.php:1-286
+Edited InvoiceController.php
+Searched for "invoiceConfig"
+Searched for "const \[config|const \[show"
+Edited invoice.blade.php
+Searched for "Settings"
+Searched for "id="print-area""
+Searched for "<div.*viewingInvoice"
+Searched for "viewingInvoice"
+Searched for "handleDownloadPdf"
+Listed directory components
+Viewed InvoicesBilling.jsx:1500-1600
+Viewed InvoicesBilling.jsx:1900-2400
+Searched for "handleViewDetails"
+Viewed InvoicesBilling.jsx:2350-2417
+Viewed InvoicesBilling.jsx:650-750
+Viewed InvoicesBilling.jsx:750-1000
+Viewed InvoicesBilling.jsx:990-1400
+Viewed InvoicesBilling.jsx:100-150
+Viewed InvoicesBilling.jsx:50-100
+Edited InvoicesBilling.jsx
+Viewed InvoicesBilling.jsx:1222-1495
+Searched for "Bank Name:"
+Searched for "BANK OF BARODA"
+Searched for "bank"
+Listed directory pdf
+Viewed invoice.blade.php:300-400
+Edited InvoicesBilling.jsx
+Viewed InvoicesBilling.jsx:105-117
+Viewed InvoicesBilling.jsx:1-25
+Edited InvoicesBilling.jsx
+Edited InvoicesBilling.jsx
+Searched for "const renderPaymentModal"
+Edited InvoicesBilling.jsx
+Searched for "<Download size={14} /> Download PDF"
+Viewed InvoicesBilling.jsx:1050-1150
+Edited InvoicesBilling.jsx
+Viewed InvoicesBilling.jsx:1300-1490
+Viewed task.md:1-6
+Searched for "SettingsController"
+Viewed SettingsController.php:1-50
+Viewed SettingsController.php:90-140
+Viewed SettingsController.php:140-180
+Viewed InvoicesBilling.jsx:120-250
+Edited InvoicesBilling.jsx
+Edited task.md
+Edited walkthrough.md
+Edited walkthrough.md
+
+I have completed the system settings integration for the new V2 invoice configurations! Here's everything I implemented:
+
+1. **Database Integration (`InvoicesBilling.jsx`)**: 
+   - I updated the frontend to automatically retrieve the system-wide invoice settings (via `SettingsController`) as soon as the Invoices tab loads.
+   - I created a sleek **"Settings"** modal inside the React preview (accessible by a button next to "Download PDF"). You can use this modal to visually toggle 8 dynamic options (e.g. HSN/SAC codes, Part Numbers, Serial Numbers, Bank Details, etc.). 
+   - When you click "Done & Save", these preferences are synced back to the backend database.
+
+2. **Connecting Frontend Previews to Settings**:
+   - The on-screen React preview now reacts immediately to the configurations you set in the modal. For instance, turning off "Show HSN/SAC" instantly shrinks the table columns and removes the HSN data.
+   - The Bank of Baroda details are now fully integrated and display gracefully at the footer in the React preview as requested.
+   
+3. **Link to PDF Generation**:
+   - The "Download PDF" button now extracts your exact configuration parameters and seamlessly attaches them to the new backend API endpoint (`/api/invoices/{id}/pdf?showHsnSac=true&...`), guaranteeing that the downloaded PDF matches your settings exactly.
+
+You can check out a detailed summary of the full design and logic upgrades in the updated [walkthrough.md](file:///C:/Users/dell/.gemini/antigravity-ide/brain/5cbfd1b4-e2a7-4a76-8c3b-c473e1044231/walkthrough.md). You should now be completely ready for a demo with your partners and managers using this modernized, ERP-style invoice module.
+
+Let me know if there are any final adjustments you'd like to make to the typography, layout, or any other feature!
+
+01/08
+
+## Automatic Configuration (Recommended)
+
+Add Sentry automatically to your app with the [Sentry wizard](https://docs.sentry.io/platforms/react-native/#install) (call this inside your project directory).
+
+```bash
+npx @sentry/wizard@latest -i reactNative --saas --org dhairya --project techfocal-mobile
+```
+
+The Sentry wizard will automatically patch your project with the following:
+
+- Configure the SDK with your DSN
+- Add source maps upload to your build process
+- Add debug symbols upload to your build process
+
+
+Add in the mobile this s for the Sentry React Native Test 
+let me know if i need to open my mobile app 

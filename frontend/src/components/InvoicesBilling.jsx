@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
@@ -26,9 +26,33 @@ import {
   Building,
   Smartphone,
   Banknote,
-  Link
+  Link,
+  ChevronDown,
+  Settings
 } from 'lucide-react';
 import { useRealTime } from '../hooks/useRealTime';
+
+function formatPoNumbers(poOrders) {
+  if (!poOrders || poOrders.length === 0) return 'N/A';
+  
+  const poNumbers = Array.from(new Set(poOrders.map(po => po.po_number).filter(Boolean)));
+  if (poNumbers.length === 0) return 'N/A';
+  if (poNumbers.length === 1) return poNumbers[0];
+
+  const allLongEnough = poNumbers.every(num => num && num.length >= 5);
+  if (allLongEnough) {
+    const prefixes = poNumbers.map(num => num.slice(0, -4));
+    const firstPrefix = prefixes[0];
+    const allSamePrefix = prefixes.every(pref => pref === firstPrefix);
+
+    if (allSamePrefix) {
+      const suffixes = poNumbers.slice(1).map(num => num.slice(-4));
+      return `${poNumbers[0]} / ${suffixes.join(' / ')}`;
+    }
+  }
+
+  return poNumbers.join(' / ');
+}
 
 export default function InvoicesBilling() {
   const navigate = useNavigate();
@@ -43,13 +67,17 @@ export default function InvoicesBilling() {
   const [uninvoicedJobs, setUninvoicedJobs] = useState([]);
   
   const [loading, setLoading] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [feedback, setFeedback] = useState(null);
   
   // Form State
-  const [selectedPoId, setSelectedPoId] = useState('');
+  const [selectedPoIds, setSelectedPoIds] = useState([]);
+  const [poSearchQuery, setPoSearchQuery] = useState('');
+  const [isPoDropdownOpen, setIsPoDropdownOpen] = useState(false);
+  const poDropdownRef = useRef(null);
   const [selectedDcId, setSelectedDcId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedJobIds, setSelectedJobIds] = useState([]);
@@ -57,6 +85,21 @@ export default function InvoicesBilling() {
   const [ewayBillNo, setEwayBillNo] = useState('');
   
   const [viewingInvoice, setViewingInvoice] = useState(null);
+  const [pdfLogo, setPdfLogo] = useState(null);
+
+  const [invoiceConfig, setInvoiceConfig] = useState({
+    showQrCode: true,
+    showCompanyTagline: true,
+    showBankDetails: true,
+    showTransportDetails: true,
+    showTermsAndConditions: true,
+    showAmountInWords: true,
+    showJobReferences: true,
+    showPaymentStatus: true,
+    showHsnSac: true,
+    showPartNumbers: true,
+    showSerialNumbers: false,
+  });
 
   const [user, setUser] = useState(() => {
     const profile = localStorage.getItem('user_profile');
@@ -74,6 +117,7 @@ export default function InvoicesBilling() {
   const [paymentAccountDetail, setPaymentAccountDetail] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentRemarks, setPaymentRemarks] = useState('');
+  const [showConfigModal, setShowConfigModal] = useState(false);
 
   const hasFinancePermission = user?.permissions?.finance === true || ['admin', 'partner'].includes(user?.role);
   const [isDcPrefilled, setIsDcPrefilled] = useState(false);
@@ -92,14 +136,14 @@ export default function InvoicesBilling() {
         setIsDcPrefilled(true);
         
         const initializePrefilled = async () => {
-          setSelectedPoId(prefilledPoId.toString());
+          setSelectedPoIds([prefilledPoId.toString()]);
           
           setJobsLoading(true);
           try {
             const token = localStorage.getItem('auth_token');
             
             // 1. Fetch completed, uninvoiced jobs
-            const jobsRes = await axios.get('http://127.0.0.1:8000/api/jobs', {
+            const jobsRes = await axios.get('/api/jobs', {
               headers: { Authorization: `Bearer ${token}` },
               params: { status: 'completed', uninvoiced: 1 }
             });
@@ -107,7 +151,7 @@ export default function InvoicesBilling() {
             setUninvoicedJobs(filteredJobs);
 
             // 2. Fetch delivery challans for this PO
-            const challansRes = await axios.get('http://127.0.0.1:8000/api/delivery-challans', {
+            const challansRes = await axios.get('/api/delivery-challans', {
               headers: { Authorization: `Bearer ${token}` }
             });
             const filteredChallans = challansRes.data.filter(c => c.purchase_order_id === parseInt(prefilledPoId, 10));
@@ -116,7 +160,7 @@ export default function InvoicesBilling() {
             // Set DC and load its jobs
             setSelectedDcId(prefilledDcId.toString());
             
-            const dcDetailsRes = await axios.get(`http://127.0.0.1:8000/api/delivery-challans/${prefilledDcId}`, {
+            const dcDetailsRes = await axios.get(`/api/delivery-challans/${prefilledDcId}`, {
               headers: { Authorization: `Bearer ${token}` }
             });
             const jobIds = dcDetailsRes.data.items.map(i => i.job_card_id);
@@ -161,7 +205,7 @@ export default function InvoicesBilling() {
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/invoices', {
+      const response = await axios.get('/api/invoices', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setInvoices(response.data);
@@ -177,7 +221,7 @@ export default function InvoicesBilling() {
   const fetchApprovedPOs = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/purchase-orders?status=approved', {
+      const response = await axios.get('/api/purchase-orders?status=approved', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPoList(response.data);
@@ -188,12 +232,47 @@ export default function InvoicesBilling() {
 
   useEffect(() => {
     fetchInvoices();
+    
+    // Fetch system settings for invoice config
+    const fetchSettings = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const response = await axios.get('/api/settings', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const sysSettings = response.data;
+        if (sysSettings) {
+          setPdfLogo(sysSettings.branding_pdf_logo || sysSettings.company_logo || null);
+          setInvoiceConfig(prev => {
+            const updated = { ...prev };
+            Object.keys(updated).forEach(key => {
+              if (sysSettings[`invoice_${key}`] !== undefined) {
+                updated[key] = sysSettings[`invoice_${key}`] === 'true' || sysSettings[`invoice_${key}`] === '1';
+              }
+            });
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load system settings:', err);
+      }
+    };
+    fetchSettings();
+
+    const handleClickOutside = (event) => {
+      if (poDropdownRef.current && !poDropdownRef.current.contains(event.target)) {
+        setIsPoDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleStartCreate = () => {
     setCreating(true);
     fetchApprovedPOs();
-    setSelectedPoId('');
+    setSelectedPoIds([]);
+    setPoSearchQuery('');
     setSelectedDcId('');
     setIsDcPrefilled(false);
     setUninvoicedJobs([]);
@@ -206,17 +285,20 @@ export default function InvoicesBilling() {
 
   const handleCancelCreate = () => {
     setCreating(false);
+    setSelectedPoIds([]);
+    setPoSearchQuery('');
     setIsDcPrefilled(false);
     setEwayBillNo('');
     setFeedback(null);
   };
 
-  // When PO changes, fetch completed and uninvoiced Job Cards, and Delivery Challans
-  const handlePoChange = async (poId) => {
-    setSelectedPoId(poId);
+  // Fetch completed and uninvoiced Job Cards, and Delivery Challans for selected PO array
+  const loadPoData = async (poIds) => {
+    setSelectedPoIds(poIds);
     setSelectedDcId('');
     setSelectedJobIds([]);
-    if (!poId) {
+    
+    if (poIds.length === 0) {
       setUninvoicedJobs([]);
       setDcList([]);
       return;
@@ -225,20 +307,21 @@ export default function InvoicesBilling() {
     setJobsLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
+      const numericPoIds = poIds.map(id => parseInt(id, 10));
       
       // 1. Fetch completed, uninvoiced jobs
-      const jobsRes = await axios.get('http://127.0.0.1:8000/api/jobs', {
+      const jobsRes = await axios.get('/api/jobs', {
         headers: { Authorization: `Bearer ${token}` },
         params: { status: 'completed', uninvoiced: 1 }
       });
-      const filteredJobs = jobsRes.data.filter(j => j.po_item?.purchase_order_id === parseInt(poId, 10));
+      const filteredJobs = jobsRes.data.filter(j => j.po_item && numericPoIds.includes(j.po_item.purchase_order_id));
       setUninvoicedJobs(filteredJobs);
 
-      // 2. Fetch delivery challans for this PO
-      const challansRes = await axios.get('http://127.0.0.1:8000/api/delivery-challans', {
+      // 2. Fetch delivery challans for these POs
+      const challansRes = await axios.get('/api/delivery-challans', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const filteredChallans = challansRes.data.filter(c => c.purchase_order_id === parseInt(poId, 10));
+      const filteredChallans = challansRes.data.filter(c => numericPoIds.includes(c.purchase_order_id));
       setDcList(filteredChallans);
 
     } catch (err) {
@@ -249,6 +332,30 @@ export default function InvoicesBilling() {
     }
   };
 
+  const handleSelectPo = (poId) => {
+    if (!poId) return;
+    const po = poList.find(p => p.id.toString() === poId);
+    if (!po) return;
+
+    if (selectedPoIds.includes(poId)) return;
+
+    if (selectedPoIds.length > 0) {
+      const firstPo = poList.find(p => p.id.toString() === selectedPoIds[0]);
+      if (firstPo && firstPo.customer_name !== po.customer_name) {
+        alert('All selected Purchase Orders must belong to the same customer.');
+        return;
+      }
+    }
+
+    const updated = [...selectedPoIds, poId];
+    loadPoData(updated);
+  };
+
+  const handleRemovePo = (poId) => {
+    const updated = selectedPoIds.filter(id => id !== poId);
+    loadPoData(updated);
+  };
+
   // When Delivery Challan is selected
   const handleDcChange = async (dcId) => {
     setSelectedDcId(dcId);
@@ -257,7 +364,7 @@ export default function InvoicesBilling() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/delivery-challans/${dcId}`, {
+      const response = await axios.get(`/api/delivery-challans/${dcId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const jobIds = response.data.items.map(i => i.job_card_id);
@@ -302,8 +409,8 @@ export default function InvoicesBilling() {
 
   const handleSaveInvoice = async (e, status = 'unpaid') => {
     if (e) e.preventDefault();
-    if (!selectedPoId) {
-      alert('Please select a Purchase Order.');
+    if (selectedPoIds.length === 0) {
+      alert('Please select at least one Purchase Order.');
       return;
     }
     if (selectedJobIds.length === 0) {
@@ -316,7 +423,7 @@ export default function InvoicesBilling() {
 
     const payload = {
       invoice_date: invoiceDate,
-      purchase_order_id: selectedPoId,
+      purchase_order_ids: selectedPoIds,
       remarks,
       eway_bill_no: ewayBillNo,
       status: status
@@ -330,7 +437,7 @@ export default function InvoicesBilling() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post('http://127.0.0.1:8000/api/invoices', payload, {
+      const response = await axios.post('/api/invoices', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -350,7 +457,7 @@ export default function InvoicesBilling() {
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/invoices/${id}`, {
+      const response = await axios.get(`/api/invoices/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setViewingInvoice(response.data);
@@ -372,7 +479,12 @@ export default function InvoicesBilling() {
     setInvoiceDate(invoice.invoice_date);
     setRemarks(invoice.remarks || '');
     setEwayBillNo(invoice.eway_bill_no || '');
-    setSelectedPoId(invoice.purchase_order_id.toString());
+    
+    const initialPoIds = invoice.purchase_orders && invoice.purchase_orders.length > 0
+      ? invoice.purchase_orders.map(po => po.id.toString())
+      : [invoice.purchase_order_id.toString()];
+    setSelectedPoIds(initialPoIds);
+    
     setSelectedDcId(invoice.delivery_challan_id ? invoice.delivery_challan_id.toString() : '');
     
     const linkedJobIds = (invoice.items || []).map(i => i.job_card_id).filter(id => id !== null);
@@ -381,11 +493,11 @@ export default function InvoicesBilling() {
     setJobsLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const jobsRes = await axios.get('http://127.0.0.1:8000/api/jobs', {
+      const jobsRes = await axios.get('/api/jobs', {
         headers: { Authorization: `Bearer ${token}` },
         params: { status: 'completed', uninvoiced: 1 }
       });
-      const filteredJobs = jobsRes.data.filter(j => j.po_item?.purchase_order_id === parseInt(invoice.purchase_order_id, 10));
+      const filteredJobs = jobsRes.data.filter(j => j.po_item && initialPoIds.map(id => parseInt(id, 10)).includes(j.po_item.purchase_order_id));
       
       const invoiceJobs = (invoice.items || []).map(item => {
         const jc = item.job_card || item.jobCard;
@@ -415,7 +527,7 @@ export default function InvoicesBilling() {
       });
       setUninvoicedJobs(mergedJobs);
 
-      const challansRes = await axios.get('http://127.0.0.1:8000/api/delivery-challans', {
+      const challansRes = await axios.get('/api/delivery-challans', {
         headers: { Authorization: `Bearer ${token}` }
       });
       const filteredChallans = challansRes.data.filter(c => c.purchase_order_id === parseInt(invoice.purchase_order_id, 10));
@@ -455,7 +567,7 @@ export default function InvoicesBilling() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.put(`http://127.0.0.1:8000/api/invoices/${editingInvoice.id}`, payload, {
+      const response = await axios.put(`/api/invoices/${editingInvoice.id}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -485,7 +597,7 @@ export default function InvoicesBilling() {
     setSaving(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post(`http://127.0.0.1:8000/api/invoices/${invoiceId}/finalize`, {}, {
+      const response = await axios.post(`/api/invoices/${invoiceId}/finalize`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -510,7 +622,7 @@ export default function InvoicesBilling() {
     setSaving(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post(`http://127.0.0.1:8000/api/invoices/${targetInvoice.id}/record-payment`, {
+      const response = await axios.post(`/api/invoices/${targetInvoice.id}/record-payment`, {
         payment_method: paymentMethod,
         transaction_reference: transactionReference,
         payment_date: paymentDate,
@@ -535,48 +647,34 @@ export default function InvoicesBilling() {
     }
   };
 
-  const handleDownloadPdf = async (invoiceNumber) => {
-    const element = document.getElementById('print-area');
-    if (!element) return;
+  const handleDownloadPdf = async () => {
+    if (!viewingInvoice) return;
     
-    setLoading(true);
+    setIsDownloadingPdf(true);
     try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
+      const token = localStorage.getItem('auth_token');
+      const configParams = new URLSearchParams(
+        Object.entries(invoiceConfig).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
+      ).toString();
+
+      const response = await axios.get(`/api/invoices/${viewingInvoice.id}/pdf?${configParams}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
       });
       
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const imgWidth = 210;
-      const pageHeight = 295;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-      
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-      
-      pdf.save(`${invoiceNumber || 'Invoice'}.pdf`);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${viewingInvoice.invoice_number}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Error generating PDF:', err);
-      alert('Failed to generate PDF. Please try again.');
+      console.error('Error downloading PDF:', err);
+      alert('Failed to download PDF. Please try again.');
     } finally {
-      setLoading(false);
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -591,7 +689,7 @@ export default function InvoicesBilling() {
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post(`http://127.0.0.1:8000/api/invoices/${viewingInvoice.id}/cancel`, 
+      const response = await axios.post(`/api/invoices/${viewingInvoice.id}/cancel`, 
         { cancellation_reason: reason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -679,6 +777,7 @@ export default function InvoicesBilling() {
     let cgst = 0;
     let sgst = 0;
     let igst = 0;
+    let totalQty = 0;
 
     selectedJobIds.forEach(id => {
       const job = uninvoicedJobs.find(j => j.id === id);
@@ -690,6 +789,7 @@ export default function InvoicesBilling() {
       cgst += itemTaxable * ((job.po_item?.cgst || 0) / 100);
       sgst += itemTaxable * ((job.po_item?.sgst || 0) / 100);
       igst += itemTaxable * ((job.po_item?.igst || 0) / 100);
+      totalQty += qty;
     });
 
     return {
@@ -697,77 +797,105 @@ export default function InvoicesBilling() {
       cgst,
       sgst,
       igst,
+      totalQty,
       grandTotal: subtotal + cgst + sgst + igst
     };
   };
 
   const totals = calculateInvoiceTotals();
-  const selectedPo = poList.find(p => p.id === parseInt(selectedPoId, 10));
+  const selectedPo = poList.find(p => selectedPoIds.includes(p.id.toString()));
 
   const printStyle = `
     @media print {
       html, body {
         background: #ffffff !important;
         background-color: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
-
-      /* Hide all non-printable layout elements */
-      .dashboard-sidebar, 
-      .dashboard-header, 
-      .no-print, 
-      button, 
-      select, 
-      input, 
-      .alert, 
-      .form-group, 
-      .card:not(#print-area) {
-        display: none !important;
+      .no-print, .dashboard-sidebar, .dashboard-header { display: none !important; }
+      .dashboard-layout, .dashboard-main, .dashboard-content, .animate-fade-in {
+        display: block !important; position: static !important; width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: transparent !important;
       }
-      
-      /* Reset layout wrappers to full page block structures */
-      .dashboard-layout, 
-      .dashboard-main, 
-      .dashboard-content, 
-      .animate-fade-in, 
       .print-grid-wrapper {
-        display: block !important;
-        position: static !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        box-shadow: none !important;
-        background: transparent !important;
+        display: block !important; position: static !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: transparent !important;
       }
-      
-      /* Ensure print area spans full page height and width dynamically using viewport units */
       #print-area {
-        display: flex !important;
-        flex-direction: column !important;
-        min-height: calc(100vh - 20mm) !important;
-        position: static !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        box-shadow: none !important;
-        background: #ffffff !important;
-        color: #000000 !important;
+        width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: #ffffff !important; color: #000000 !important;
       }
-
-      .print-footer {
-        margin-top: auto !important;
-        padding-top: 20px !important;
-      }
-
-      @page {
-        size: auto;
-        margin: 10mm 15mm;
-      }
+      @page { size: A4 portrait; margin: 10mm; }
+      
+      /* Essential for multi-page tables */
+      table { page-break-inside: auto; }
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      thead { display: table-header-group; }
+      tfoot { display: table-footer-group; }
     }
   `;
+
+  const renderConfigModal = () => {
+    if (!showConfigModal) return null;
+    return createPortal(
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 2000,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <div style={{
+          background: 'var(--color-surface, #fff)',
+          borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Settings size={18} /> Print & PDF Settings
+            </h3>
+            <button onClick={() => setShowConfigModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <X size={18} />
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflowY: 'auto', paddingRight: '4px' }}>
+            {Object.entries(invoiceConfig).map(([key, value]) => (
+              <label key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontSize: '13px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '8px', backgroundColor: value ? 'var(--color-primary-light)' : 'transparent' }}>
+                <span style={{ fontWeight: '500', color: value ? 'var(--color-primary)' : 'var(--color-text-main)' }}>
+                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={value}
+                  onChange={(e) => setInvoiceConfig(prev => ({ ...prev, [key]: e.target.checked }))}
+                  style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--color-primary)' }}
+                />
+              </label>
+            ))}
+          </div>
+
+          <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={async () => {
+                setShowConfigModal(false);
+                try {
+                  const token = localStorage.getItem('auth_token');
+                  const payload = Object.entries(invoiceConfig).reduce((acc, [k, v]) => ({ ...acc, [`invoice_${k}`]: String(v) }), {});
+                  await axios.post('/api/settings', payload, {
+                    headers: { Authorization: `Bearer ${token}` }
+                  });
+                } catch (err) {
+                  console.error('Failed to save settings:', err);
+                }
+              }}
+              className="form-button"
+              style={{ width: 'auto', padding: '8px 24px', backgroundColor: 'var(--color-primary)' }}
+            >
+              Done & Save
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
 
   const renderPaymentModal = () => {
     if (!showPaymentModal) return null;
@@ -984,7 +1112,11 @@ export default function InvoicesBilling() {
                 )}
               </h2>
               <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                Generated on {new Date(viewingInvoice.invoice_date).toLocaleDateString()} for PO #{viewingInvoice.purchase_order?.po_number}.
+                Generated on {new Date(viewingInvoice.invoice_date).toLocaleDateString()} for PO #{formatPoNumbers(
+                  viewingInvoice.purchase_orders && viewingInvoice.purchase_orders.length > 0 
+                    ? viewingInvoice.purchase_orders 
+                    : (viewingInvoice.purchase_order ? [viewingInvoice.purchase_order] : [])
+                )}.
               </p>
             </div>
           </div>
@@ -1025,6 +1157,14 @@ export default function InvoicesBilling() {
             )}
 
             <button 
+              onClick={() => setShowConfigModal(true)}
+              className="logout-btn no-print"
+              style={{ height: '38px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <Settings size={14} /> Settings
+            </button>
+
+            <button 
               onClick={handlePrint}
               className="logout-btn"
               style={{ height: '38px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -1033,11 +1173,16 @@ export default function InvoicesBilling() {
             </button>
 
             <button 
-              onClick={() => handleDownloadPdf(viewingInvoice.invoice_number)}
+              onClick={() => handleDownloadPdf()}
+              disabled={isDownloadingPdf}
               className="form-button"
-              style={{ width: 'auto', marginTop: 0, height: '38px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--color-primary)' }}
+              style={{ width: 'auto', marginTop: 0, height: '38px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: isDownloadingPdf ? '#94a3b8' : 'var(--color-primary)', cursor: isDownloadingPdf ? 'not-allowed' : 'pointer' }}
             >
-              <Download size={14} /> Download PDF
+              {isDownloadingPdf ? (
+                <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Downloading...</>
+              ) : (
+                <><Download size={14} /> Download PDF</>
+              )}
             </button>
           </div>
         </div>
@@ -1186,174 +1331,257 @@ export default function InvoicesBilling() {
           </div>
 
           {/* Right Panel: Invoice Paper Sheet */}
-          <div className="card" id="print-area" style={{ 
-            position: 'relative',
-            backgroundColor: '#ffffff', 
-            color: '#0f172a',
-            border: '1px solid #cbd5e1', 
-            borderRadius: 'var(--radius-sm)', 
+          <div id="print-area" style={{ 
+            backgroundColor: '#ffffff', color: '#0f172a',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            width: '100%',
+            maxWidth: '210mm', // A4 width approx for screen preview
+            margin: '0 auto',
             padding: '40px',
-            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
-            fontFamily: 'system-ui, -apple-system, sans-serif',
-            overflow: 'hidden'
+            border: '1px solid #e2e8f0', // for screen only
+            borderRadius: '4px',
+            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
           }}>
+            <style>
+              {`
+                @media print {
+                  #print-area {
+                    max-width: none !important;
+                    border: none !important;
+                    box-shadow: none !important;
+                    padding: 0 !important;
+                  }
+                }
+              `}
+            </style>
+            
             {viewingInvoice.cancelled_at && (
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%) rotate(-45deg)',
-                color: 'rgba(239, 68, 68, 0.15)',
-                fontSize: '100px',
-                fontWeight: '900',
-                letterSpacing: '10px',
-                pointerEvents: 'none',
-                zIndex: 99,
-                userSelect: 'none',
-                whiteSpace: 'nowrap',
-                border: '15px solid rgba(239, 68, 68, 0.15)',
-                padding: '20px 40px',
-                borderRadius: '20px',
-                textTransform: 'uppercase'
+              <div className="no-print" style={{
+                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-45deg)',
+                color: 'rgba(239, 68, 68, 0.15)', fontSize: '100px', fontWeight: '900', letterSpacing: '10px',
+                pointerEvents: 'none', zIndex: 99, userSelect: 'none', whiteSpace: 'nowrap',
+                border: '15px solid rgba(239, 68, 68, 0.15)', padding: '20px 40px', borderRadius: '20px', textTransform: 'uppercase'
               }}>
                 Cancelled
               </div>
             )}
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '20px', marginBottom: '24px' }}>
-              <div>
-                <span style={{ fontSize: '9px', fontWeight: '800', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginBottom: '6px', letterSpacing: '0.5px' }}>TAX INVOICE</span>
-                <h1 style={{ fontSize: '18px', fontWeight: '800', color: '#1e3a8a', margin: 0 }}>TECHFOCAL ENTERPRISES LLP</h1>
-                <p style={{ fontSize: '10px', color: '#475569', margin: '4px 0 0 0', lineHeight: '1.4' }}>
-                  Plot 12, Industrial Area Phase-1, GIDC,<br />
-                  Ahmedabad, Gujarat, India - 380001<br />
-                  <strong>GSTIN: 24AAHFT8902M1Z8</strong>
-                </p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <h2 style={{ fontSize: '15px', fontWeight: '800', margin: 0, color: '#475569' }}>ORIGINAL FOR RECIPIENT</h2>
-                <p style={{ fontSize: '10px', margin: '6px 0 0 0', lineHeight: '1.4' }}>
-                  Invoice No: <strong>{viewingInvoice.invoice_number}</strong><br />
-                  Invoice Date: <strong>{new Date(viewingInvoice.invoice_date).toLocaleDateString()}</strong><br />
-                  State Code: <strong>24 (Gujarat)</strong>
-                </p>
-              </div>
-            </div>
 
-            {/* Address Blocks */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', fontSize: '11px', marginBottom: '24px', lineHeight: '1.5' }}>
-              <div style={{ border: '1px solid #cbd5e1', padding: '12px', borderRadius: '4px' }}>
-                <span style={{ fontWeight: '700', color: '#475569', display: 'block', marginBottom: '6px', fontSize: '9px', textTransform: 'uppercase' }}>Billed To (Buyer)</span>
-                <strong>{viewingInvoice.purchase_order?.customer_name}</strong>
-                <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap', color: '#334155' }}>{viewingInvoice.purchase_order?.customer_address}</p>
-                <strong>GSTIN: {viewingInvoice.purchase_order?.customer_gstin || 'N/A'}</strong>
-              </div>
-              <div style={{ border: '1px solid #cbd5e1', padding: '12px', borderRadius: '4px' }}>
-                <span style={{ fontWeight: '700', color: '#475569', display: 'block', marginBottom: '6px', fontSize: '9px', textTransform: 'uppercase' }}>Purchase Details</span>
-                <strong>Customer PO Ref:</strong> #{viewingInvoice.purchase_order?.po_number}<br />
-                <strong>PO Date:</strong> {viewingInvoice.purchase_order?.po_date ? new Date(viewingInvoice.purchase_order.po_date).toLocaleDateString() : 'N/A'}<br />
-                {viewingInvoice.delivery_challan && (
-                  <>
-                    <strong>Delivery Challan:</strong> {viewingInvoice.delivery_challan.challan_number}<br />
-                    <strong>Challan Date:</strong> {new Date(viewingInvoice.delivery_challan.challan_date).toLocaleDateString()}<br />
-                  </>
-                )}
-                {viewingInvoice.eway_bill_no && (
-                  <>
-                    <strong>E-way Bill No:</strong> {viewingInvoice.eway_bill_no}<br />
-                  </>
-                )}
-              </div>
-            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ display: 'table-header-group' }}>
+                <tr>
+                  <td colSpan={invoiceConfig.showHsnSac ? 7 : 6} style={{ padding: 0 }}>
+                    {/* 1. Header Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '16px', borderBottom: '2px solid #16a34a', marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        {pdfLogo ? (
+                          <img src={pdfLogo} alt="Logo" style={{ maxHeight: '70px', maxWidth: '250px', objectFit: 'contain' }} />
+                        ) : (
+                          <>
+                            <div style={{ width: '50px', height: '50px', backgroundColor: '#f1f5f9', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#94a3b8', border: '1px solid #e2e8f0' }}>LOGO</div>
+                            <div>
+                              <h1 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#0f172a', letterSpacing: '-0.5px' }}>TECHFOCAL ENTERPRISES LLP</h1>
+                              {invoiceConfig.showCompanyTagline && <p style={{ fontSize: '11px', color: '#16a34a', margin: '2px 0 0 0', fontWeight: '600' }}>Where Technology is First</p>}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '1px' }}>GST INVOICE</h2>
+                        <p style={{ fontSize: '10px', color: '#64748b', margin: '4px 0 0 0' }}>Original for Recipient</p>
+                      </div>
+                    </div>
 
-            {/* Items Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginBottom: '24px' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #0f172a', borderTop: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontWeight: '700' }}>
-                  <th style={{ padding: '8px 6px', textAlign: 'left', width: '30px' }}>Sr.</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'left', width: '90px' }}>Item Code</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'left' }}>Description</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'center', width: '55px' }}>HSN</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'right', width: '45px' }}>Qty</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'right', width: '65px' }}>Rate</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'right', width: '50px' }}>Tax %</th>
-                  <th style={{ padding: '8px 6px', textAlign: 'right', width: '80px' }}>Total Amount</th>
+                    {/* 2. Info Panels Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px', fontSize: '11px' }}>
+                      {/* Left Panel */}
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px', marginBottom: '4px' }}>
+                          <span style={{ color: '#64748b' }}>Invoice No:</span><strong style={{ color: '#0f172a' }}>{viewingInvoice.invoice_number}</strong>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px', marginBottom: '4px' }}>
+                          <span style={{ color: '#64748b' }}>Invoice Date:</span><strong style={{ color: '#0f172a' }}>{new Date(viewingInvoice.invoice_date).toLocaleDateString()}</strong>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px', marginBottom: '4px' }}>
+                          <span style={{ color: '#64748b' }}>PO No(s):</span><strong style={{ color: '#0f172a' }}>{formatPoNumbers(
+                            viewingInvoice.purchase_orders && viewingInvoice.purchase_orders.length > 0 
+                              ? viewingInvoice.purchase_orders 
+                              : (viewingInvoice.purchase_order ? [viewingInvoice.purchase_order] : [])
+                          )}</strong>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '4px' }}>
+                          <span style={{ color: '#64748b' }}>Terms:</span><strong style={{ color: '#0f172a' }}>Immediate</strong>
+                        </div>
+                        {invoiceConfig.showJobReferences && (
+                          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #e2e8f0' }}>
+                            <span style={{ color: '#64748b', display: 'block', marginBottom: '2px' }}>Jobs Included:</span>
+                            <span style={{ color: '#0f172a' }}>{viewingInvoice.items?.map(i => i.job_card?.job_card_number).filter(Boolean).join(', ') || 'N/A'}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Right Panel */}
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px', marginBottom: '4px' }}>
+                          <span style={{ color: '#64748b' }}>Delivery Challan No:</span><strong style={{ color: '#0f172a' }}>{viewingInvoice.delivery_challan?.challan_number || 'N/A'}</strong>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px', marginBottom: '4px' }}>
+                          <span style={{ color: '#64748b' }}>Dispatch Date:</span><strong style={{ color: '#0f172a' }}>{viewingInvoice.delivery_challan ? new Date(viewingInvoice.delivery_challan.challan_date).toLocaleDateString() : 'N/A'}</strong>
+                        </div>
+                        {invoiceConfig.showTransportDetails && (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px', marginBottom: '4px' }}>
+                              <span style={{ color: '#64748b' }}>Transporter:</span><strong style={{ color: '#0f172a' }}>{viewingInvoice.delivery_challan?.transporter_name || 'N/A'}</strong>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px', marginBottom: '4px' }}>
+                              <span style={{ color: '#64748b' }}>Vehicle / LR No:</span><strong style={{ color: '#0f172a' }}>{viewingInvoice.delivery_challan?.vehicle_number || '-'} / {viewingInvoice.delivery_challan?.lr_number || '-'}</strong>
+                            </div>
+                          </>
+                        )}
+                        {(viewingInvoice.eway_bill_no) && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '4px' }}>
+                            <span style={{ color: '#64748b' }}>E-Way Bill No:</span><strong style={{ color: '#0f172a' }}>{viewingInvoice.eway_bill_no}</strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 3. Bill From / Bill To Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px', fontSize: '11px' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px', letterSpacing: '0.5px' }}>Bill From</div>
+                        <strong style={{ fontSize: '12px', color: '#0f172a', display: 'block', marginBottom: '4px' }}>TECHFOCAL ENTERPRISES LLP</strong>
+                        <p style={{ color: '#475569', margin: '0 0 4px 0', lineHeight: '1.4' }}>
+                          Plot 12, Industrial Area Phase-1, GIDC,<br />
+                          Ahmedabad, Gujarat, India - 380001
+                        </p>
+                        <div style={{ color: '#475569' }}><strong>GSTIN:</strong> 24AAHFT8902M1Z8</div>
+                        <div style={{ color: '#475569' }}><strong>Email:</strong> accounts@techfocal.com</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px', letterSpacing: '0.5px' }}>Bill To</div>
+                        <strong style={{ fontSize: '12px', color: '#0f172a', display: 'block', marginBottom: '4px' }}>{viewingInvoice.purchase_order?.customer_name}</strong>
+                        <p style={{ color: '#475569', margin: '0 0 4px 0', lineHeight: '1.4', whiteSpace: 'pre-wrap' }}>
+                          {viewingInvoice.purchase_order?.customer_address}
+                        </p>
+                        <div style={{ color: '#475569' }}><strong>GSTIN:</strong> {viewingInvoice.purchase_order?.customer_gstin || 'Unregistered'}</div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                {/* 4. Table Header (Repeats on every page) */}
+                <tr style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: '10px', color: '#475569', width: '40px' }}>Sr No.</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'left', fontSize: '10px', color: '#475569' }}>Description of Goods</th>
+                  {invoiceConfig.showHsnSac && <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: '10px', color: '#475569', width: '70px' }}>SAC Code</th>}
+                  <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: '10px', color: '#475569', width: '60px' }}>Qty</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'center', fontSize: '10px', color: '#475569', width: '50px' }}>Unit</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: '10px', color: '#475569', width: '80px' }}>Rate (₹)</th>
+                  <th style={{ padding: '10px 8px', textAlign: 'right', fontSize: '10px', color: '#475569', width: '90px' }}>Amount (₹)</th>
                 </tr>
               </thead>
-              <tbody>
-                {viewingInvoice.items?.map((item, idx) => {
-                  const taxRate = parseFloat(item.cgst_rate) + parseFloat(item.sgst_rate) + parseFloat(item.igst_rate);
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '8px 6px', textAlign: 'left' }}>{idx + 1}</td>
-                      <td style={{ padding: '8px 6px', fontWeight: '600' }}>{item.po_item?.item_code}</td>
-                      <td style={{ padding: '8px 6px', whiteSpace: 'pre-wrap', lineHeight: '1.3' }}>
-                        {(item.po_item?.description || '').split('\n')[0]}
-                      </td>
-                      <td style={{ padding: '8px 6px', textAlign: 'center' }}>{item.po_item?.hsn_sac || '-'}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{parseFloat(item.quantity).toFixed(0)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>₹{parseFloat(item.rate).toFixed(2)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{taxRate.toFixed(1)}%</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: '700' }}>
-                        ₹{parseFloat(item.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  );
-                })}
+              
+              {/* 5. Table Body */}
+              <tbody style={{ borderBottom: '1px solid #e2e8f0' }}>
+                {viewingInvoice.items?.map((item, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', pageBreakInside: 'avoid' }}>
+                    <td style={{ padding: '12px 8px', textAlign: 'center', fontSize: '11px', color: '#475569', verticalAlign: 'top' }}>{idx + 1}</td>
+                    <td style={{ padding: '12px 8px', textAlign: 'left', fontSize: '11px', verticalAlign: 'top' }}>
+                      <strong style={{ color: '#0f172a', display: 'block', marginBottom: '2px', whiteSpace: 'pre-wrap' }}>
+                        {item.po_item?.description || ''}
+                      </strong>
+                      {invoiceConfig.showPartNumbers && item.po_item?.item_code && (
+                        <div style={{ color: '#64748b', fontSize: '10px' }}>Part No: {item.po_item.item_code}</div>
+                      )}
+                      {invoiceConfig.showSerialNumbers && item.job_card?.job_card_number && (
+                        <div style={{ color: '#64748b', fontSize: '10px' }}>Job Ref: {item.job_card.job_card_number}</div>
+                      )}
+                    </td>
+                    {invoiceConfig.showHsnSac && <td style={{ padding: '12px 8px', textAlign: 'center', fontSize: '11px', color: '#475569', verticalAlign: 'top' }}>{item.po_item?.hsn_sac || '-'}</td>}
+                    <td style={{ padding: '12px 8px', textAlign: 'right', fontSize: '11px', color: '#0f172a', verticalAlign: 'top', fontWeight: '500' }}>{parseFloat(item.quantity).toFixed(2)}</td>
+                    <td style={{ padding: '12px 8px', textAlign: 'center', fontSize: '11px', color: '#475569', verticalAlign: 'top' }}>{item.po_item?.unit || 'NOS'}</td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right', fontSize: '11px', color: '#0f172a', verticalAlign: 'top' }}>{parseFloat(item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right', fontSize: '11px', color: '#0f172a', verticalAlign: 'top', fontWeight: '600' }}>{parseFloat(item.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
 
-            {/* Calculations and Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '20px', fontSize: '11px', marginBottom: '30px' }}>
-              <div>
-                <strong>Amount Chargeable in Words:</strong>
-                <p style={{ margin: '6px 0', fontWeight: '600', color: '#1e3a8a', fontStyle: 'italic', fontSize: '11px' }}>
-                  {numberToWords(viewingInvoice.grand_total)}
-                </p>
-              </div>
-              <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '12px', lineHeight: '1.6', fontSize: '11px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Total Taxable Value:</span>
-                  <strong>₹{parseFloat(viewingInvoice.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                </div>
-                {parseFloat(viewingInvoice.cgst_total) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
-                    <span>Central Tax (CGST):</span>
-                    <span>₹{parseFloat(viewingInvoice.cgst_total).toFixed(2)}</span>
+            {/* 6. Footer section (prints only at the end of the table, natural flow ensures it's on the last page) */}
+            <div style={{ pageBreakInside: 'avoid', marginTop: '24px' }}>
+              
+              {/* Tax Summary & Totals */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+                <div style={{ width: '300px', fontSize: '11px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                    <span>Taxable Value</span>
+                    <strong style={{ color: '#0f172a' }}>₹{parseFloat(viewingInvoice.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
-                )}
-                {parseFloat(viewingInvoice.sgst_total) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
-                    <span>State Tax (SGST):</span>
-                    <span>₹{parseFloat(viewingInvoice.sgst_total).toFixed(2)}</span>
+                  {parseFloat(viewingInvoice.cgst_total) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                      <span>CGST</span>
+                      <strong style={{ color: '#0f172a' }}>₹{parseFloat(viewingInvoice.cgst_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  )}
+                  {parseFloat(viewingInvoice.sgst_total) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                      <span>SGST</span>
+                      <strong style={{ color: '#0f172a' }}>₹{parseFloat(viewingInvoice.sgst_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  )}
+                  {parseFloat(viewingInvoice.igst_total) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                      <span>IGST</span>
+                      <strong style={{ color: '#0f172a' }}>₹{parseFloat(viewingInvoice.igst_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '2px solid #e2e8f0', borderTop: '1px solid #cbd5e1', fontSize: '14px', marginTop: '4px' }}>
+                    <strong style={{ color: '#0f172a' }}>Grand Total</strong>
+                    <strong style={{ color: '#0f172a' }}>₹{parseFloat(viewingInvoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                   </div>
-                )}
-                {parseFloat(viewingInvoice.igst_total) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
-                    <span>Integrated Tax (IGST):</span>
-                    <span>₹{parseFloat(viewingInvoice.igst_total).toFixed(2)}</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', marginTop: '6px', paddingTop: '6px', fontSize: '13px' }}>
-                  <strong>Invoice Value (Grand Total):</strong>
-                  <strong style={{ color: '#1e3a8a' }}>₹{parseFloat(viewingInvoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
                 </div>
               </div>
-            </div>
 
-            {/* Signature Area */}
-            <div className="print-footer" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', fontSize: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '20px', marginTop: '40px' }}>
-              <div>
-                <strong>Declarations:</strong>
-                <p style={{ margin: '4px 0', color: '#475569' }}>
-                  1. We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
-                </p>
-              </div>
-              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', justifyItems: 'flex-end', height: '90px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '700' }}>For TECHFOCAL ENTERPRISES LLP</span>
-                <span style={{ marginTop: 'auto', display: 'block', borderTop: '1px solid #94a3b8', paddingTop: '6px', fontSize: '10px', color: '#475569', width: '160px', alignSelf: 'flex-end', textAlign: 'center' }}>
-                  Authorized Signatory
-                </span>
+              {/* Amount in Words */}
+              {invoiceConfig.showAmountInWords && (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '4px', padding: '12px', marginBottom: '24px', backgroundColor: '#f8fafc' }}>
+                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '4px' }}>Amount Chargeable (in words)</span>
+                  <strong style={{ fontSize: '11px', color: '#0f172a' }}>{numberToWords(viewingInvoice.grand_total)}</strong>
+                </div>
+              )}
+
+              {/* Page Footer Block: Bank Details, QR, Signature */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '20px', alignItems: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                
+                {/* Bank Details */}
+                <div>
+                  {invoiceConfig.showBankDetails && (
+                    <div style={{ fontSize: '10px', color: '#475569', lineHeight: '1.5' }}>
+                      <strong style={{ color: '#0f172a', display: 'block', marginBottom: '4px', fontSize: '11px' }}>Company Bank Details</strong>
+                      Bank Name: <strong>BANK OF BARODA</strong><br />
+                      A/C No: <strong>78030500000313</strong><br />
+                      IFSC: <strong>BARB0ALKAPU</strong><br />
+                      Branch: <strong>RC DUTT ROAD, VADODARA</strong>
+                    </div>
+                  )}
+                </div>
+
+                {/* QR Code Placeholder */}
+                <div style={{ textAlign: 'center' }}>
+                  {invoiceConfig.showQrCode && (
+                    <div style={{ width: '80px', height: '80px', border: '1px solid #e2e8f0', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
+                      <span style={{ fontSize: '9px', color: '#94a3b8', textAlign: 'center' }}>UPI<br/>QR Code</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Authorized Signatory */}
+                <div style={{ textAlign: 'right' }}>
+                  <strong style={{ fontSize: '11px', color: '#0f172a', display: 'block', marginBottom: '40px' }}>For TECHFOCAL ENTERPRISES LLP</strong>
+                  <span style={{ fontSize: '10px', color: '#64748b', borderTop: '1px solid #94a3b8', paddingTop: '6px', display: 'inline-block', width: '180px', textAlign: 'center' }}>
+                    Authorised Signatory
+                  </span>
+                </div>
+
               </div>
             </div>
           </div>
@@ -1361,6 +1589,7 @@ export default function InvoicesBilling() {
         </div>
         
         {renderPaymentModal()}
+        {renderConfigModal()}
       </div>
     );
   }
@@ -1421,7 +1650,7 @@ export default function InvoicesBilling() {
                     payload.delivery_challan_id = selectedDcId;
                   }
                   
-                  const response = await axios.put(`http://127.0.0.1:8000/api/invoices/${editingInvoice.id}`, payload, {
+                  const response = await axios.put(`/api/invoices/${editingInvoice.id}`, payload, {
                     headers: { Authorization: `Bearer ${token}` }
                   });
 
@@ -1614,7 +1843,7 @@ export default function InvoicesBilling() {
             </div>
 
             {selectedPo ? (
-              <div style={{ border: '1px solid #cbd5e1', padding: '10px', borderRadius: '4px', fontSize: '11px', marginBottom: '20px', lineHeight: '1.5' }}>
+              <div style={{ border: '1px solid #cbd5e1', padding: '10px', borderRadius: '4px', fontSize: '11px', marginBottom: '20px', lineHeight: '1.5', boxSizing: 'border-box' }}>
                 <strong>Billed To:</strong><br />
                 {selectedPo.customer_name}<br />
                 <strong>GSTIN:</strong> {selectedPo.customer_gstin || 'N/A'}
@@ -1753,18 +1982,134 @@ export default function InvoicesBilling() {
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="form-group">
-                <label className="form-label"><User size={12} /> Select Purchase Order</label>
-                <CustomSelect
-                  value={selectedPoId}
-                  onChange={(val) => handlePoChange(val)}
-                  options={[
-                    { value: '', label: '-- Choose Approved PO --' },
-                    ...poList.map(po => ({ value: po.id.toString(), label: `PO #${po.po_number} (${po.customer_name})` }))
-                  ]}
-                  disabled={isDcPrefilled}
-                  style={{ height: '38px' }}
-                />
+              <div className="form-group" style={{ position: 'relative' }} ref={poDropdownRef}>
+                <label className="form-label"><User size={12} /> Select Purchase Order(s)</label>
+                {!isDcPrefilled ? (
+                  <>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Search & select PO..."
+                        value={poSearchQuery}
+                        onChange={(e) => {
+                          setPoSearchQuery(e.target.value);
+                          setIsPoDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsPoDropdownOpen(true)}
+                        style={{ paddingLeft: '12px', paddingRight: '30px', height: '38px' }}
+                      />
+                      <ChevronDown 
+                        size={16} 
+                        style={{ position: 'absolute', right: '10px', color: 'var(--color-text-muted)', cursor: 'pointer' }}
+                        onClick={() => setIsPoDropdownOpen(!isPoDropdownOpen)}
+                      />
+                    </div>
+                    {isPoDropdownOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: 'var(--color-card-bg)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)',
+                        boxShadow: 'var(--shadow-lg)',
+                        zIndex: 100,
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        marginTop: '4px'
+                      }}>
+                        {poList
+                          .filter(po => {
+                            const term = poSearchQuery.toLowerCase();
+                            return (
+                              po.po_number.toLowerCase().includes(term) ||
+                              po.customer_name.toLowerCase().includes(term)
+                            );
+                          })
+                          .map(po => {
+                            const isSelected = selectedPoIds.includes(po.id.toString());
+                            return (
+                              <div
+                                key={po.id}
+                                onClick={() => {
+                                  if (!isSelected) {
+                                    handleSelectPo(po.id.toString());
+                                  }
+                                  setIsPoDropdownOpen(false);
+                                  setPoSearchQuery('');
+                                }}
+                                style={{
+                                  padding: '8px 12px',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  backgroundColor: isSelected ? 'var(--color-bg-base)' : 'transparent',
+                                  opacity: isSelected ? 0.6 : 1,
+                                  borderBottom: '1px solid var(--color-border-light)',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <span>PO #{po.po_number} - {po.customer_name}</span>
+                                {isSelected && <span style={{ color: 'var(--color-success)', fontSize: '11px', fontWeight: 'bold' }}>Selected</span>}
+                              </div>
+                            );
+                          })}
+                        {poList.length === 0 && (
+                          <div style={{ padding: '8px 12px', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                            No approved POs found.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={selectedPo ? `PO #${selectedPo.po_number} (${selectedPo.customer_name})` : ''}
+                    disabled
+                    style={{ paddingLeft: '12px', backgroundColor: 'var(--color-bg-base)', cursor: 'not-allowed', height: '38px' }}
+                  />
+                )}
+                {selectedPoIds.length > 0 && !isDcPrefilled && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--color-text-muted)' }}>
+                      Selected Purchase Orders ({selectedPoIds.length}):
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {selectedPoIds.map(poId => {
+                        const po = poList.find(p => p.id.toString() === poId);
+                        if (!po) return null;
+                        return (
+                          <div 
+                            key={poId} 
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              backgroundColor: 'var(--color-bg-base)',
+                              border: '1px solid var(--color-border)',
+                              borderRadius: '16px',
+                              padding: '4px 10px',
+                              fontSize: '12px',
+                              fontWeight: '500'
+                            }}
+                          >
+                            <span>PO #{po.po_number}</span>
+                            <X 
+                              size={12} 
+                              style={{ cursor: 'pointer', color: 'var(--color-danger)' }}
+                              onClick={() => handleRemovePo(poId)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -1790,7 +2135,7 @@ export default function InvoicesBilling() {
                     { value: '', label: '-- Select Outgoing Challan --' },
                     ...dcList.map(dc => ({ value: dc.id.toString(), label: `${dc.challan_number} (${new Date(dc.challan_date).toLocaleDateString()})` }))
                   ]}
-                  disabled={isDcPrefilled || !selectedPoId}
+                  disabled={isDcPrefilled || selectedPoIds.length === 0}
                   style={{ height: '38px' }}
                 />
               </div>
@@ -1833,13 +2178,13 @@ export default function InvoicesBilling() {
                   <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
                     <Loader2 size={20} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
                   </div>
-                ) : !selectedPoId ? (
+                ) : selectedPoIds.length === 0 ? (
                   <div style={{ padding: '20px', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
                     Please select a Purchase Order above first to view completed Job Cards.
                   </div>
                 ) : uninvoicedJobs.length === 0 ? (
                   <div style={{ padding: '20px', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                    No completed and uninvoiced Job Cards found for this Purchase Order.
+                    No completed and uninvoiced Job Cards found for the selected Purchase Orders.
                   </div>
                 ) : (
                   <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
@@ -1875,7 +2220,21 @@ export default function InvoicesBilling() {
                                 onChange={() => handleCheckboxChange(job.id)}
                               />
                             </td>
-                            <td style={{ padding: '10px', fontWeight: '600' }}>{job.job_card_number}</td>
+                            <td style={{ padding: '10px', fontWeight: '600' }}>
+                              {job.job_card_number}
+                              <span style={{ 
+                                marginLeft: '8px', 
+                                fontSize: '10px', 
+                                backgroundColor: 'var(--color-bg-base)', 
+                                padding: '2px 6px', 
+                                borderRadius: '4px', 
+                                border: '1px solid var(--color-border)', 
+                                color: 'var(--color-text-muted)',
+                                fontWeight: '500'
+                              }}>
+                                PO: #{job.po_item?.purchase_order?.po_number}
+                              </span>
+                            </td>
                             <td style={{ padding: '10px', fontWeight: '500' }}>{job.po_item?.item_code}</td>
                             <td style={{ padding: '10px', textAlign: 'right' }}>{job.quantity} {job.po_item?.unit || 'PC'}</td>
                             <td style={{ padding: '10px', textAlign: 'right' }}>₹{parseFloat(job.po_item?.rate || 0).toFixed(2)}</td>
@@ -1916,13 +2275,13 @@ export default function InvoicesBilling() {
             </div>
 
             {selectedPo ? (
-              <div style={{ border: '1px solid #cbd5e1', padding: '10px', borderRadius: '4px', fontSize: '11px', marginBottom: '20px', lineHeight: '1.5' }}>
+              <div style={{ border: '1px solid #cbd5e1', padding: '10px', borderRadius: '4px', fontSize: '11px', marginBottom: '20px', lineHeight: '1.5', boxSizing: 'border-box' }}>
                 <strong>Billed To:</strong><br />
                 {selectedPo.customer_name}<br />
                 <strong>GSTIN:</strong> {selectedPo.customer_gstin || 'N/A'}
               </div>
             ) : (
-              <div style={{ padding: '20px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#94a3b8', fontSize: '11px', marginBottom: '20px' }}>
+              <div style={{ padding: '20px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#94a3b8', fontSize: '11px', marginBottom: '20px', boxSizing: 'border-box' }}>
                 Select a PO to see billing context.
               </div>
             )}
@@ -2034,7 +2393,7 @@ export default function InvoicesBilling() {
       )}
 
 {/* Invoices Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         {invoices.length === 0 && !loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', padding: '60px 20px', gap: '12px' }}>
             <Receipt size={40} style={{ color: 'var(--color-text-light)' }} />
@@ -2044,14 +2403,14 @@ export default function InvoicesBilling() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', textAlign: 'left' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--color-bg-base)', borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ padding: '16px' }}>Invoice Number</th>
-                <th style={{ padding: '16px' }}>Date</th>
-                <th style={{ padding: '16px' }}>Purchase Order</th>
-                <th style={{ padding: '16px' }}>Client</th>
-                <th style={{ padding: '16px', textAlign: 'right' }}>Total Amount</th>
-                <th style={{ padding: '16px' }}>Status</th>
-                <th style={{ padding: '16px' }}>Linked DC</th>
-                <th style={{ padding: '16px', textAlign: 'right' }}>Actions</th>
+                <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>Invoice Number</th>
+                <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>Date</th>
+                <th style={{ padding: '12px' }}>Purchase Order</th>
+                <th style={{ padding: '12px' }}>Client</th>
+                <th style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>Total Amount</th>
+                <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>Status</th>
+                <th style={{ padding: '12px' }}>Linked DC</th>
+                <th style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2071,21 +2430,29 @@ export default function InvoicesBilling() {
               ) :
                 invoices.map(inv => (
                 <tr key={inv.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.15s ease' }} className="table-row-hover">
-                  <td style={{ padding: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {inv.invoice_number}
-                    {inv.cancelled_at && (
-                      <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: 'var(--color-danger-light)', color: 'var(--color-danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', fontWeight: '600' }}>
-                        CANCELLED
-                      </span>
+                  <td style={{ padding: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>{inv.invoice_number}</span>
+                      {inv.cancelled_at && (
+                        <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: 'var(--color-danger-light)', color: 'var(--color-danger)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', fontWeight: '600' }}>
+                          CANCELLED
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>{new Date(inv.invoice_date).toLocaleDateString()}</td>
+                  <td style={{ padding: '12px', fontWeight: '500' }}>
+                    PO #{formatPoNumbers(
+                      inv.purchase_orders && inv.purchase_orders.length > 0 
+                        ? inv.purchase_orders 
+                        : (inv.purchase_order ? [inv.purchase_order] : [])
                     )}
                   </td>
-                  <td style={{ padding: '16px' }}>{new Date(inv.invoice_date).toLocaleDateString()}</td>
-                  <td style={{ padding: '16px', fontWeight: '500' }}>PO #{inv.purchase_order?.po_number}</td>
-                  <td style={{ padding: '16px' }}>{inv.purchase_order?.customer_name}</td>
-                  <td style={{ padding: '16px', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
+                  <td style={{ padding: '12px' }}>{inv.purchase_order?.customer_name}</td>
+                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
                     ₹{parseFloat(inv.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td style={{ padding: '16px' }}>
+                  <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
                     {inv.cancelled_at ? (
                       <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#fee2e2', color: '#ef4444', borderRadius: '12px', fontWeight: '600' }}>Cancelled</span>
                     ) : inv.status === 'draft' ? (
@@ -2096,7 +2463,7 @@ export default function InvoicesBilling() {
                       <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#ffedd5', color: '#ea580c', borderRadius: '12px', fontWeight: '600' }}>Unpaid</span>
                     )}
                   </td>
-                  <td style={{ padding: '16px' }}>
+                  <td style={{ padding: '12px' }}>
                     {inv.delivery_challan ? (
                       <button
                         onClick={(e) => {
@@ -2111,7 +2478,7 @@ export default function InvoicesBilling() {
                       <span style={{ color: 'var(--color-text-light)', fontStyle: 'italic', fontSize: '12px' }}>No DC Linked</span>
                     )}
                   </td>
-                  <td style={{ padding: '16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'inline-flex', gap: '8px' }}>
                       <button 
                         onClick={() => handleViewDetails(inv.id)}
@@ -2162,6 +2529,7 @@ export default function InvoicesBilling() {
 
       {/* ── Record Payment Modal ── */}
       {renderPaymentModal()}
+      {renderConfigModal()}
     </div>
   );
 }

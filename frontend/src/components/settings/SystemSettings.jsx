@@ -8,7 +8,8 @@ export default function SystemSettings() {
   const [formData, setFormData] = useState({
     system_timezone: 'Asia/Kolkata',
     system_date_format: 'DD/MM/YYYY',
-    system_currency: 'INR'
+    system_currency: 'INR',
+    mfa_global_enabled: 'false'
   });
 
   const [saving, setSaving] = useState(false);
@@ -20,7 +21,8 @@ export default function SystemSettings() {
       setFormData({
         system_timezone: settings.system_timezone || 'Asia/Kolkata',
         system_date_format: settings.system_date_format || 'DD/MM/YYYY',
-        system_currency: settings.system_currency || 'INR'
+        system_currency: settings.system_currency || 'INR',
+        mfa_global_enabled: settings.mfa_global_enabled || 'false'
       });
     }
   }, [settings]);

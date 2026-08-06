@@ -88,6 +88,12 @@ class ImapService
     public function fetchPurchaseOrders()
     {
         if (!$this->mbox && !$this->connect()) {
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager'],
+                'Email Sync Failed ⚠️',
+                "Could not connect to IMAP server: " . $this->error,
+                'workshop_alert_email_sync'
+            );
             throw new Exception("Could not connect to IMAP server: " . $this->error);
         }
 
@@ -293,6 +299,12 @@ class ImapService
             } catch (Exception $e) {
                 $failedEmails++;
                 logger()->error("Failed to process email message $msgNumber: " . $e->getMessage());
+                PushNotificationService::sendToRoles(
+                    ['admin', 'manager'],
+                    'PO Import Failed ❌',
+                    "Failed to process an email. Check logs for details.",
+                    'purchase_order_fail'
+                );
             }
         }
 

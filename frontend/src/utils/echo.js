@@ -14,8 +14,10 @@ export const initEcho = () => {
     : import.meta.env.VITE_REVERB_HOST;
 
   const key = import.meta.env.VITE_REVERB_APP_KEY || 'x0e2wapuiluowxd89e3k';
-  const port = import.meta.env.VITE_REVERB_PORT || 8080;
+  const port = import.meta.env.VITE_REVERB_PORT || 8085;
   const scheme = import.meta.env.VITE_REVERB_SCHEME || 'http';
+
+  const token = localStorage.getItem('auth_token');
 
   echoInstance = new Echo({
     broadcaster: 'reverb',
@@ -25,6 +27,12 @@ export const initEcho = () => {
     wssPort: parseInt(port),
     forceTLS: scheme === 'https',
     enabledTransports: ['ws', 'wss'],
+    authEndpoint: `${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/broadcasting/auth`,
+    auth: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
   });
 
   // Listen to the public workshop channel and dispatch browser CustomEvents

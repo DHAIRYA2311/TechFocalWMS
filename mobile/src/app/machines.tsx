@@ -20,6 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
+import TechFocalLoader from '@/components/tech-focal-loader';
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -135,7 +137,7 @@ export default function MachinesScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`${apiUrl}/api/machines/${id}`, { headers });
+      const res = await offlineGet(`${apiUrl}/api/machines/${id}`, { headers });
       setSelectedMachine(res.data);
     } catch (err) {
       console.warn('Failed to refresh selected machine details:', err);
@@ -157,9 +159,9 @@ export default function MachinesScreen() {
       const headers = { Authorization: `Bearer ${token}` };
       
       const [machinesRes, statsRes, meRes] = await Promise.all([
-        axios.get(`${apiUrl}/api/machines`, { headers }),
-        axios.get(`${apiUrl}/api/machines/stats`, { headers }),
-        axios.get(`${apiUrl}/api/me`, { headers }).catch(() => null)
+        offlineGet(`${apiUrl}/api/machines`, { headers }),
+        offlineGet(`${apiUrl}/api/machines/stats`, { headers }),
+        offlineGet(`${apiUrl}/api/me`, { headers }).catch(() => null)
       ]);
 
       setMachines(machinesRes.data);
@@ -195,7 +197,7 @@ export default function MachinesScreen() {
     setLoadingDetails(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`${apiUrl}/api/machines/${machine.id}`, { headers });
+      const res = await offlineGet(`${apiUrl}/api/machines/${machine.id}`, { headers });
       
       // Update selected machine state with logs and detailed active jobs
       setSelectedMachine(res.data);
@@ -243,7 +245,7 @@ export default function MachinesScreen() {
       setShowLogForm(false);
 
       // Re-fetch machine details to update logs list inside modal
-      const detailsRes = await axios.get(`${apiUrl}/api/machines/${selectedMachine.id}`, { headers });
+      const detailsRes = await offlineGet(`${apiUrl}/api/machines/${selectedMachine.id}`, { headers });
       setSelectedMachine(detailsRes.data);
 
       // Refresh parent machine list & metrics in background
@@ -384,8 +386,7 @@ export default function MachinesScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {loading ? (
           <View style={styles.centerSpinner}>
-            <ActivityIndicator size="large" color="#2563eb" />
-            <Text style={styles.spinnerText}>Loading shop floor machines...</Text>
+            <TechFocalLoader />
           </View>
         ) : filteredMachines.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -1335,3 +1336,4 @@ const styles = StyleSheet.create({
     flex: 1,
   }
 });
+

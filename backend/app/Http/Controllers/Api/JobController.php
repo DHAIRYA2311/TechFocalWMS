@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\JobCard;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use App\Services\SecureFileUploadService;
 use Exception;
+use Illuminate\Http\Request;
 
 class JobController extends Controller
 {
@@ -18,7 +20,22 @@ class JobController extends Controller
         $workerId = $request->query('worker_id');
         $machineId = $request->query('machine_id');
 
-        $query = JobCard::with(['poItem.purchaseOrder', 'worker', 'challanItem.challan', 'machine', 'deliveryChallanItem'])
+        $query = JobCard::select([
+                'id', 'job_card_number', 'incoming_challan_item_id', 'po_item_id', 'quantity', 
+                'assigned_worker_id', 'machine_id', 'status', 'start_date', 'end_date', 'remarks', 
+                'machining_started_at', 'machining_duration_seconds',
+                'is_archived', 'created_at', 'updated_at'
+            ])
+            ->with([
+                'poItem',
+                'poItem.purchaseOrder' => function($q) {
+                    $q->select(['id', 'po_number', 'po_date', 'customer_name', 'status', 'is_archived', 'created_at']);
+                },
+                'worker:id,name,role',
+                'challanItem.challan',
+                'machine:id,machine_code,name,status',
+                'deliveryChallanItem'
+            ])
             ->orderBy('created_at', 'desc');
 
         $archived = $request->query('archived') == '1';
@@ -81,13 +98,13 @@ class JobController extends Controller
     {
         $job = JobCard::findOrFail($id);
 
-        $request->validate([
-            'assigned_worker_id' => 'required|exists:users,id',
-            'machine_id' => 'required|exists:machines,id',
-            'status' => 'nullable|in:pending,in_progress,inspection,completed,cancelled',
+        $validated = $request->validate([
+            'assigned_worker_id' => 'required|integer|exists:users,id',
+            'machine_id' => 'required|integer|exists:machines,id',
+            'status' => 'nullable|string|in:pending,in_progress,inspection,completed,cancelled',
         ]);
 
-        $machine = \App\Models\Machine::findOrFail($request->machine_id);
+        $machine = \App\Models\Machine::findOrFail($validated['machine_id']);
         if ($machine->status === 'maintenance') {
             return response()->json([
                 'message' => 'The selected machine is currently under maintenance.'
@@ -103,26 +120,45 @@ class JobController extends Controller
             $oldMachineId = $job->machine_id;
 
             $updateData = [
-                'assigned_worker_id' => $request->assigned_worker_id,
-                'machine_id' => $request->machine_id,
+                'assigned_worker_id' => $validated['assigned_worker_id'],
+                'machine_id' => $validated['machine_id'],
             ];
 
-            if ($request->has('status') && $request->status) {
-                $updateData['status'] = $request->status;
-                if ($request->status === 'in_progress' && !$job->start_date) {
-                    $updateData['start_date'] = date('Y-m-d');
+            $newStatus = isset($validated['status']) && $validated['status'] ? $validated['status'] : ($job->status === 'pending' ? 'in_progress' : $job->status);
+
+            if ($newStatus === 'in_progress') {
+                $activeJob = JobCard::where('machine_id', $validated['machine_id'])
+                    ->where('status', 'in_progress')
+                    ->where('id', '!=', $job->id)
+                    ->first();
+
+                if ($activeJob) {
+                    return response()->json(['message' => 'The selected machine is busy running Job #' . $activeJob->job_card_number], 422);
                 }
-            } elseif ($job->status === 'pending') {
-                // Auto-advance pending job cards to in_progress upon allocation
+
                 $updateData['status'] = 'in_progress';
-                $updateData['start_date'] = date('Y-m-d');
+                if ($job->status !== 'in_progress') {
+                    $updateData['machining_started_at'] = now();
+                    if (!$job->start_date) {
+                        $updateData['start_date'] = date('Y-m-d');
+                    }
+                }
+            } else {
+                $updateData['status'] = $newStatus;
+                if ($job->status === 'in_progress') {
+                    if ($job->machining_started_at) {
+                        $duration = \Carbon\Carbon::parse($job->machining_started_at)->diffInSeconds(now());
+                        $updateData['machining_duration_seconds'] = $job->machining_duration_seconds + $duration;
+                        $updateData['machining_started_at'] = null;
+                    }
+                }
             }
 
             $job->update($updateData);
 
             // Sync statuses of both old and new machines
-            $this->syncMachineStatus($request->machine_id);
-            if ($oldMachineId && $oldMachineId != $request->machine_id) {
+            $this->syncMachineStatus($validated['machine_id']);
+            if ($oldMachineId && $oldMachineId != $validated['machine_id']) {
                 $this->syncMachineStatus($oldMachineId);
             }
 
@@ -145,23 +181,50 @@ class JobController extends Controller
     {
         $job = JobCard::findOrFail($id);
 
-        $request->validate([
-            'status' => 'required|in:pending,in_progress,inspection,completed,cancelled',
-            'remarks' => 'nullable|string',
+        $validated = $request->validate([
+            'status' => 'required|string|in:pending,in_progress,inspection,completed,cancelled',
+            'remarks' => 'nullable|string|max:2000',
         ]);
 
         try {
             $machineId = $job->machine_id;
 
             $updateData = [
-                'status' => $request->status,
-                'remarks' => $request->remarks,
+                'status' => $validated['status'],
+                'remarks' => $validated['remarks'] ?? null,
             ];
 
-            if ($request->status === 'in_progress' && !$job->start_date) {
-                $updateData['start_date'] = date('Y-m-d');
-            } elseif ($request->status === 'completed' && !$job->end_date) {
-                $updateData['end_date'] = date('Y-m-d');
+            if ($validated['status'] === 'in_progress') {
+                if (!$job->assigned_worker_id || !$job->machine_id) {
+                    return response()->json(['message' => 'Assign both a Machine and an Operator before starting production.'], 422);
+                }
+
+                $activeJob = JobCard::where('machine_id', $job->machine_id)
+                    ->where('status', 'in_progress')
+                    ->where('id', '!=', $job->id)
+                    ->first();
+
+                if ($activeJob) {
+                    return response()->json(['message' => 'Machine is busy running Job #' . $activeJob->job_card_number], 422);
+                }
+
+                if ($job->status !== 'in_progress') {
+                    $updateData['machining_started_at'] = now();
+                    if (!$job->start_date) {
+                        $updateData['start_date'] = date('Y-m-d');
+                    }
+                }
+            } else {
+                if ($job->status === 'in_progress') {
+                    if ($job->machining_started_at) {
+                        $duration = \Carbon\Carbon::parse($job->machining_started_at)->diffInSeconds(now());
+                        $updateData['machining_duration_seconds'] = $job->machining_duration_seconds + $duration;
+                        $updateData['machining_started_at'] = null;
+                    }
+                }
+                if ($request->status === 'completed' && !$job->end_date) {
+                    $updateData['end_date'] = date('Y-m-d');
+                }
             }
 
             $job->update($updateData);
@@ -208,25 +271,22 @@ class JobController extends Controller
     {
         $job = JobCard::findOrFail($id);
 
-        $request->validate([
+        $validated = $request->validate([
             'file' => 'required|file|mimes:pdf,png,jpg,jpeg|max:10240',
         ]);
 
         try {
             $file = $request->file('file');
             
-            if (!\Illuminate\Support\Facades\Storage::disk('public')->exists('drawings')) {
-                \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory('drawings');
-            }
-
-            $fileName = time() . '_job_drawing_' . preg_replace('/[^a-zA-Z0-9_.-]/', '', $file->getClientOriginalName());
-            \Illuminate\Support\Facades\Storage::disk('public')->putFileAs('drawings', $file, $fileName);
-            
-            $relativeUrl = 'storage/drawings/' . $fileName;
+            // Upload to local disk -> storage/app/private/drawings
+            $path = SecureFileUploadService::upload($file, 'private/drawings', 'local');
 
             $currentDrawings = $job->drawing_path; // Casts to array via accessor
+            if (!is_array($currentDrawings)) {
+                $currentDrawings = [];
+            }
             $currentDrawings[] = [
-                'path' => $relativeUrl,
+                'path' => $path,
                 'name' => $file->getClientOriginalName()
             ];
 
@@ -239,7 +299,7 @@ class JobController extends Controller
                 'job' => $job
             ]);
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to upload drawing: ' . $e->getMessage()
             ], 500);
@@ -253,23 +313,20 @@ class JobController extends Controller
     {
         $job = JobCard::findOrFail($id);
         
-        $request->validate([
-            'path' => 'required|string'
+        $validated = $request->validate([
+            'path' => 'required|string|max:1000'
         ]);
 
         try {
-            $pathToDelete = $request->path;
+            $pathToDelete = $validated['path'];
             $drawings = $job->drawing_path;
             
             $updatedDrawings = array_values(array_filter($drawings, function ($d) use ($pathToDelete) {
                 return $d['path'] !== $pathToDelete;
             }));
 
-            // Delete file from disk if it exists
-            $diskPath = str_replace('storage/', '', $pathToDelete);
-            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($diskPath)) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($diskPath);
-            }
+            // Delete file from disk securely
+            SecureFileUploadService::delete($pathToDelete, 'local');
 
             $job->update([
                 'drawing_path' => $updatedDrawings
@@ -293,16 +350,16 @@ class JobController extends Controller
     {
         $job = JobCard::findOrFail($id);
         
-        $request->validate([
-            'path' => 'required|string',
+        $validated = $request->validate([
+            'path' => 'required|string|max:1000',
             'name' => 'required|string|max:255'
         ]);
 
         try {
             $drawings = $job->drawing_path;
             foreach ($drawings as &$d) {
-                if ($d['path'] === $request->path) {
-                    $d['name'] = $request->name;
+                if ($d['path'] === $validated['path']) {
+                    $d['name'] = $validated['name'];
                 }
             }
 
@@ -372,7 +429,7 @@ class JobController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'delete_reason' => 'required|string|max:1000'
         ]);
 
@@ -391,7 +448,7 @@ class JobController extends Controller
 
         $job->update([
             'deleted_by' => $request->user()->id,
-            'delete_reason' => $request->delete_reason
+            'delete_reason' => $validated['delete_reason']
         ]);
 
         $job->delete();

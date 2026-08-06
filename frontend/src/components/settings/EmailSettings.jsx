@@ -38,7 +38,7 @@ export default function EmailSettings() {
     const fetchImapSettings = async () => {
       setLoadingImap(true);
       try {
-        const response = await axios.get('http://127.0.0.1:8000/api/settings/email');
+        const response = await axios.get('/api/settings/email');
         const data = response.data;
         setImapHost(data.imap_host || '');
         setImapPort(data.imap_port || '993');
@@ -75,7 +75,7 @@ export default function EmailSettings() {
     setFeedback(null);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/settings/email/test', {
+      const response = await axios.post('/api/settings/email/test', {
         imap_host: imapHost,
         imap_port: imapPort,
         imap_encryption: imapEncryption,
@@ -106,7 +106,7 @@ export default function EmailSettings() {
     setFeedback(null);
 
     try {
-      await axios.post('http://127.0.0.1:8000/api/settings/email', {
+      await axios.post('/api/settings/email', {
         imap_host: imapHost,
         imap_port: imapPort,
         imap_encryption: imapEncryption,

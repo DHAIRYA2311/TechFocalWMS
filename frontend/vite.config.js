@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vite' // force reload
+
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 

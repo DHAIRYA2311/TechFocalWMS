@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\User;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -178,31 +179,60 @@ class AttendanceController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'date' => 'required|date',
             'shift' => 'nullable|string|in:day,night',
-            'records' => 'required|array',
-            'records.*.user_id' => 'required|exists:users,id',
-            'records.*.status' => 'required|in:present,absent,late,half_day,leave',
-            'records.*.clock_in' => 'nullable|string',
-            'records.*.clock_out' => 'nullable|string',
-            'records.*.notes' => 'nullable|string',
+            'records' => 'required|array|max:100',
+            'records.*.user_id' => 'required|integer|exists:users,id',
+            'records.*.status' => 'required|string|in:present,absent,late,half_day,leave',
+            'records.*.clock_in' => 'nullable|string|max:10',
+            'records.*.clock_out' => 'nullable|string|max:10',
+            'records.*.notes' => 'nullable|string|max:1000',
         ]);
 
-        $date = $request->date;
-        $shift = $request->input('shift', 'day');
+        $date = $validated['date'];
+        $shift = $validated['shift'] ?? 'day';
         
-        foreach ($request->records as $record) {
+        foreach ($validated['records'] as $record) {
+            $existingAtt = Attendance::where('user_id', $record['user_id'])
+                ->where('date', $date)
+                ->where('shift', $shift)
+                ->first();
+
+            $newClockIn = $record['clock_in'] ? Carbon::parse($record['clock_in'])->toTimeString() : null;
+            $newClockOut = $record['clock_out'] ? Carbon::parse($record['clock_out'])->toTimeString() : null;
+
             Attendance::updateOrCreate(
                 ['user_id' => $record['user_id'], 'date' => $date, 'shift' => $shift],
                 [
                     'status' => $record['status'],
-                    'clock_in' => $record['clock_in'] ? Carbon::parse($record['clock_in'])->toTimeString() : null,
-                    'clock_out' => $record['clock_out'] ? Carbon::parse($record['clock_out'])->toTimeString() : null,
+                    'clock_in' => $newClockIn,
+                    'clock_out' => $newClockOut,
                     'notes' => $record['notes'] ?? null,
                     'marked_by' => $request->user()->id
                 ]
             );
+
+            // Handle Attendance Correction Notification
+            if ($existingAtt) {
+                if ($existingAtt->status !== $record['status'] || $existingAtt->clock_in !== $newClockIn || $existingAtt->clock_out !== $newClockOut) {
+                    $user = User::find($record['user_id']);
+                    PushNotificationService::sendToRoles(
+                        ['admin', 'manager', 'partner'],
+                        "Attendance Corrected 📝",
+                        "Attendance for {$user->name} on {$date} ({$shift} shift) was updated.",
+                        'attendance_correction'
+                    );
+                }
+            } else if ($record['status'] === 'late') {
+                $user = User::find($record['user_id']);
+                PushNotificationService::sendToRoles(
+                    ['admin', 'manager', 'partner'],
+                    "Late Attendance Alert ⏰",
+                    "{$user->name} has been marked late for the {$shift} shift on {$date}.",
+                    'attendance_late'
+                );
+            }
         }
 
         return response()->json(['message' => 'Attendance sheet saved successfully.']);
@@ -243,6 +273,16 @@ class AttendanceController extends Controller
             'status' => $status,
             'clock_in' => $now->toTimeString(),
         ]);
+
+        if ($status === 'late') {
+            $user = User::find($userId);
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager', 'partner'],
+                "Late Attendance Alert ⏰",
+                "{$user->name} has clocked in late for the {$resolvedShift} shift.",
+                'attendance_late'
+            );
+        }
 
         return response()->json([
             'message' => 'Checked in successfully for ' . ucfirst($resolvedShift) . ' Shift.',

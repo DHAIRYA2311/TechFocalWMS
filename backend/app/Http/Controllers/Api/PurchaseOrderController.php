@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PurchaseOrder;
 use App\Models\PoItem;
 use App\Services\ImapService;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -19,9 +20,13 @@ class PurchaseOrderController extends Controller
     {
         $status = $request->query('status');
 
-        $query = PurchaseOrder::with([
-            'items.jobCards',
-            'items.deliveryItems'
+        $query = PurchaseOrder::select([
+            'id', 'po_number', 'po_date', 'customer_name', 'customer_address', 'customer_gstin', 
+            'customer_email', 'remarks', 'email_uid', 'status', 'is_archived', 'created_at', 'updated_at'
+        ])
+        ->with([
+            'items.jobCards:id,po_item_id,quantity,status',
+            'items.deliveryItems:id,po_item_id,quantity_delivered'
         ])->withCount('items')->orderBy('created_at', 'desc');
 
         if ($status) {
@@ -77,7 +82,9 @@ class PurchaseOrderController extends Controller
         $po = PurchaseOrder::with([
             'items.jobCards.worker',
             'items.jobCards.machine',
-            'items.deliveryItems.deliveryChallan'
+            'items.deliveryItems.deliveryChallan',
+            'invoices',
+            'deliveryChallans'
         ])->findOrFail($id);
         
         foreach ($po->items as $item) {
@@ -122,32 +129,33 @@ class PurchaseOrderController extends Controller
         if (!$request->user()->hasPermission('purchase_orders')) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
-        $request->validate([
-            'po_number' => 'required|string',
+        $validated = $request->validate([
+            'po_number' => 'required|string|max:100',
             'po_date' => 'required|date',
-            'customer_name' => 'required|string',
-            'customer_address' => 'nullable|string',
-            'customer_gstin' => 'nullable|string',
-            'customer_email' => 'nullable|email',
-            'remarks' => 'nullable|string',
+            'customer_id' => 'nullable|exists:customers,id',
+            'customer_name' => 'required|string|max:255',
+            'customer_address' => 'nullable|string|max:1000',
+            'customer_gstin' => 'nullable|string|max:20',
+            'customer_email' => 'nullable|email|max:255',
+            'remarks' => 'nullable|string|max:2000',
             'status' => 'required|string|in:draft_review,approved',
-            'items' => 'required|array|min:1',
-            'items.*.item_code' => 'nullable|string',
-            'items.*.description' => 'required|string',
-            'items.*.quantity' => 'required|numeric|min:0.01',
-            'items.*.rate' => 'required|numeric|min:0',
+            'items' => 'required|array|min:1|max:100',
+            'items.*.item_code' => 'nullable|string|max:100',
+            'items.*.description' => 'required|string|max:1000',
+            'items.*.quantity' => 'required|numeric|min:0.01|max:99999999',
+            'items.*.rate' => 'required|numeric|min:0|max:99999999',
             'items.*.delivery_date' => 'nullable|date',
-            'items.*.hsn_sac' => 'nullable|string',
-            'items.*.uqc' => 'nullable|string',
-            'items.*.cgst' => 'nullable|numeric|min:0',
-            'items.*.sgst' => 'nullable|numeric|min:0',
-            'items.*.igst' => 'nullable|numeric|min:0',
-            'items.*.item_remarks' => 'nullable|string',
-            'items.*.manufacturing_notes' => 'nullable|string',
+            'items.*.hsn_sac' => 'nullable|string|max:20',
+            'items.*.uqc' => 'nullable|string|max:10',
+            'items.*.cgst' => 'nullable|numeric|min:0|max:100',
+            'items.*.sgst' => 'nullable|numeric|min:0|max:100',
+            'items.*.igst' => 'nullable|numeric|min:0|max:100',
+            'items.*.item_remarks' => 'nullable|string|max:1000',
+            'items.*.manufacturing_notes' => 'nullable|string|max:2000',
         ]);
 
         // Check duplicate
-        $exists = PurchaseOrder::where('po_number', $request->po_number)->exists();
+        $exists = PurchaseOrder::where('po_number', $validated['po_number'])->exists();
         if ($exists) {
             return response()->json([
                 'message' => 'A Purchase Order with this PO number already exists.'
@@ -158,17 +166,17 @@ class PurchaseOrderController extends Controller
 
         try {
             $po = PurchaseOrder::create([
-                'po_number' => $request->po_number,
-                'po_date' => $request->po_date,
-                'customer_name' => $request->customer_name,
-                'customer_address' => $request->customer_address,
-                'customer_gstin' => $request->customer_gstin,
-                'customer_email' => $request->customer_email,
-                'remarks' => $request->remarks,
-                'status' => $request->status,
+                'po_number' => $validated['po_number'],
+                'po_date' => $validated['po_date'],
+                'customer_name' => $validated['customer_name'],
+                'customer_address' => $validated['customer_address'] ?? null,
+                'customer_gstin' => $validated['customer_gstin'] ?? null,
+                'customer_email' => $validated['customer_email'] ?? null,
+                'remarks' => $validated['remarks'] ?? null,
+                'status' => $validated['status'],
             ]);
 
-            foreach ($request->items as $item) {
+            foreach ($validated['items'] as $item) {
                 $qty = floatval($item['quantity']);
                 $rate = floatval($item['rate']);
                 
@@ -199,28 +207,8 @@ class PurchaseOrderController extends Controller
                 ]);
             }
 
-            // Automatically initialize Job Cards if status is approved
-            if ($request->status === 'approved') {
-                $po->load('items');
-                $settingPrefix = \App\Models\Setting::getVal('prefix_job', 'JOB-');
-                foreach ($po->items as $poItem) {
-                    $lastJob = \App\Models\JobCard::orderBy('id', 'desc')->first();
-                    $nextNum = 1;
-                    if ($lastJob) {
-                        $parts = explode('-', $lastJob->job_card_number);
-                        $lastSeq = (int) end($parts);
-                        $nextNum = $lastSeq + 1;
-                    }
-                    $jobCardNumber = $settingPrefix . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
-
-                    \App\Models\JobCard::create([
-                        'job_card_number' => $jobCardNumber,
-                        'po_item_id' => $poItem->id,
-                        'quantity' => $poItem->quantity,
-                        'status' => 'pending',
-                    ]);
-                }
-            }
+            // Job Cards are no longer automatically initialized on PO approval. 
+            // They must be created explicitly via the convertToJobs flow.
 
             DB::commit();
 
@@ -270,26 +258,28 @@ class PurchaseOrderController extends Controller
         }
         $po = PurchaseOrder::findOrFail($id);
 
-        $request->validate([
-            'po_number' => 'required|string',
+        $validated = $request->validate([
+            'po_number' => 'required|string|max:100',
             'po_date' => 'required|date',
-            'customer_name' => 'required|string',
-            'customer_address' => 'nullable|string',
-            'customer_gstin' => 'nullable|string',
-            'customer_email' => 'nullable|email',
-            'remarks' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.description' => 'required|string',
-            'items.*.quantity' => 'required|numeric|min:0.01',
-            'items.*.rate' => 'required|numeric|min:0',
+            'customer_id' => 'nullable|exists:customers,id',
+            'customer_name' => 'required|string|max:255',
+            'customer_address' => 'nullable|string|max:1000',
+            'customer_gstin' => 'nullable|string|max:20',
+            'customer_email' => 'nullable|email|max:255',
+            'remarks' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1|max:100',
+            'items.*.item_code' => 'nullable|string|max:100',
+            'items.*.description' => 'required|string|max:1000',
+            'items.*.quantity' => 'required|numeric|min:0.01|max:99999999',
+            'items.*.rate' => 'required|numeric|min:0|max:99999999',
             'items.*.delivery_date' => 'nullable|date',
-            'items.*.hsn_sac' => 'nullable|string',
-            'items.*.uqc' => 'nullable|string',
-            'items.*.cgst' => 'nullable|numeric|min:0',
-            'items.*.sgst' => 'nullable|numeric|min:0',
-            'items.*.igst' => 'nullable|numeric|min:0',
-            'items.*.item_remarks' => 'nullable|string',
-            'items.*.manufacturing_notes' => 'nullable|string',
+            'items.*.hsn_sac' => 'nullable|string|max:20',
+            'items.*.uqc' => 'nullable|string|max:10',
+            'items.*.cgst' => 'nullable|numeric|min:0|max:100',
+            'items.*.sgst' => 'nullable|numeric|min:0|max:100',
+            'items.*.igst' => 'nullable|numeric|min:0|max:100',
+            'items.*.item_remarks' => 'nullable|string|max:1000',
+            'items.*.manufacturing_notes' => 'nullable|string|max:2000',
         ]);
 
         DB::beginTransaction();
@@ -297,20 +287,20 @@ class PurchaseOrderController extends Controller
         try {
             // 1. Update PO details
             $po->update([
-                'po_number' => $request->po_number,
-                'po_date' => $request->po_date,
-                'customer_name' => $request->customer_name,
-                'customer_address' => $request->customer_address,
-                'customer_gstin' => $request->customer_gstin,
-                'customer_email' => $request->customer_email,
-                'remarks' => $request->remarks,
+                'po_number' => $validated['po_number'],
+                'po_date' => $validated['po_date'],
+                'customer_name' => $validated['customer_name'],
+                'customer_address' => $validated['customer_address'] ?? null,
+                'customer_gstin' => $validated['customer_gstin'] ?? null,
+                'customer_email' => $validated['customer_email'] ?? null,
+                'remarks' => $validated['remarks'] ?? null,
                 'status' => 'approved',
             ]);
 
             // 2. Sync items
             $po->items()->delete();
 
-            foreach ($request->items as $item) {
+            foreach ($validated['items'] as $item) {
                 $qty = floatval($item['quantity']);
                 $rate = floatval($item['rate']);
                 
@@ -343,6 +333,14 @@ class PurchaseOrderController extends Controller
 
             DB::commit();
 
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager', 'partner'],
+                'Purchase Order Approved ✅',
+                "PO-{$po->po_number} has been approved and jobs initialized.",
+                'purchase_order_approved',
+                ['po_id' => $po->id]
+            );
+
             return response()->json([
                 'message' => 'Purchase Order verified and approved successfully. Job cards initialized.',
                 'po' => $po->load('items')
@@ -367,9 +365,9 @@ class PurchaseOrderController extends Controller
 
         $po = PurchaseOrder::findOrFail($id);
 
-        $request->validate([
+        $validated = $request->validate([
             'status' => 'required|string|in:draft_review,approved,rejected,marked_review,completed',
-            'remarks' => 'nullable|string'
+            'remarks' => 'nullable|string|max:2000'
         ]);
 
         DB::beginTransaction();
@@ -378,7 +376,7 @@ class PurchaseOrderController extends Controller
             $originalSnapshot = $this->getPoSnapshot($po);
 
             $po->update([
-                'status' => $request->status,
+                'status' => $validated['status'],
             ]);
 
             $revisedSnapshot = $this->getPoSnapshot($po->fresh());
@@ -393,34 +391,33 @@ class PurchaseOrderController extends Controller
                 'user_name' => $request->user()->name,
             ]);
 
-            // Automatically initialize Job Cards if status is approved
-            if ($request->status === 'approved') {
-                $po->load('items');
-                $settingPrefix = \App\Models\Setting::getVal('prefix_job', 'JOB-');
-                foreach ($po->items as $poItem) {
-                    $existingJob = \App\Models\JobCard::where('po_item_id', $poItem->id)->first();
-                    if (!$existingJob) {
-                        $lastJob = \App\Models\JobCard::orderBy('id', 'desc')->first();
-                        $nextNum = 1;
-                        if ($lastJob) {
-                            $parts = explode('-', $lastJob->job_card_number);
-                            $lastSeq = (int) end($parts);
-                            $nextNum = $lastSeq + 1;
-                        }
-                        $jobCardNumber = $settingPrefix . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
-
-                        \App\Models\JobCard::create([
-                            'job_card_number' => $jobCardNumber,
-                            'po_item_id' => $poItem->id,
-                            'quantity' => $poItem->quantity,
-                            'status' => 'pending',
-                            'remarks' => $po->remarks
-                        ]);
-                    }
-                }
-            }
+            // Job Cards are no longer automatically initialized on PO approval. 
+            // They must be created explicitly via the convertToJobs flow.
 
             DB::commit();
+
+            // Status notification mapping
+            $notifTitle = 'PO Status Updated';
+            $notifType = 'purchase_order';
+            
+            if ($request->status === 'approved') {
+                $notifTitle = 'Purchase Order Approved ✅';
+                $notifType = 'purchase_order_approved';
+            } elseif ($request->status === 'rejected') {
+                $notifTitle = 'Purchase Order Rejected ❌';
+                $notifType = 'purchase_order_rejected';
+            } elseif ($request->status === 'marked_review') {
+                $notifTitle = 'PO Requires Review ⚠️';
+                $notifType = 'purchase_order_review';
+            }
+
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager', 'partner'],
+                $notifTitle,
+                "PO-{$po->po_number} status is now {$request->status}.",
+                $notifType,
+                ['po_id' => $po->id]
+            );
 
             return response()->json([
                 'message' => "Purchase Order status updated to '{$request->status}' successfully.",
@@ -451,13 +448,13 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $request->validate([
-            'po_item_ids' => 'nullable|array',
-            'po_item_ids.*' => 'exists:po_items,id',
+        $validated = $request->validate([
+            'po_item_ids' => 'nullable|array|max:100',
+            'po_item_ids.*' => 'integer|exists:po_items,id',
             'challan_option' => 'nullable|string|in:none,new,existing',
-            'challan_number' => 'required_if:challan_option,new|nullable|string',
+            'challan_number' => 'required_if:challan_option,new|nullable|string|max:100',
             'challan_date' => 'required_if:challan_option,new|nullable|date',
-            'incoming_challan_id' => 'required_if:challan_option,existing|nullable|exists:incoming_challans,id',
+            'incoming_challan_id' => 'required_if:challan_option,existing|nullable|integer|exists:incoming_challans,id',
         ]);
 
         DB::beginTransaction();
@@ -467,13 +464,13 @@ class PurchaseOrderController extends Controller
             $skippedCount = 0;
 
             // Determine the challan to link
-            $challanOption = $request->input('challan_option');
+            $challanOption = $validated['challan_option'] ?? null;
             $linkedChallan = null;
 
             if ($challanOption === 'new') {
                 $linkedChallan = \App\Models\IncomingChallan::create([
-                    'challan_number' => $request->challan_number,
-                    'challan_date' => $request->challan_date ?: date('Y-m-d'),
+                    'challan_number' => $validated['challan_number'],
+                    'challan_date' => $validated['challan_date'] ?? date('Y-m-d'),
                     'purchase_order_id' => $po->id,
                     'received_by' => auth()->id() ?: 1,
                 ]);
@@ -579,26 +576,27 @@ class PurchaseOrderController extends Controller
 
         $po = PurchaseOrder::with('items')->findOrFail($id);
 
-        $request->validate([
-            'po_number' => 'required|string',
+        $validated = $request->validate([
+            'po_number' => 'required|string|max:100',
             'po_date' => 'required|date',
-            'customer_name' => 'required|string',
-            'customer_address' => 'nullable|string',
-            'customer_gstin' => 'nullable|string',
-            'customer_email' => 'nullable|email',
-            'remarks' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.description' => 'required|string',
-            'items.*.quantity' => 'required|numeric|min:0.01',
-            'items.*.rate' => 'required|numeric|min:0',
+            'customer_name' => 'required|string|max:255',
+            'customer_address' => 'nullable|string|max:1000',
+            'customer_gstin' => 'nullable|string|max:20',
+            'customer_email' => 'nullable|email|max:255',
+            'remarks' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1|max:100',
+            'items.*.item_code' => 'nullable|string|max:100',
+            'items.*.description' => 'required|string|max:1000',
+            'items.*.quantity' => 'required|numeric|min:0.01|max:99999999',
+            'items.*.rate' => 'required|numeric|min:0|max:99999999',
             'items.*.delivery_date' => 'nullable|date',
-            'items.*.hsn_sac' => 'nullable|string',
-            'items.*.uqc' => 'nullable|string',
-            'items.*.cgst' => 'nullable|numeric|min:0',
-            'items.*.sgst' => 'nullable|numeric|min:0',
-            'items.*.igst' => 'nullable|numeric|min:0',
-            'items.*.item_remarks' => 'nullable|string',
-            'items.*.manufacturing_notes' => 'nullable|string',
+            'items.*.hsn_sac' => 'nullable|string|max:20',
+            'items.*.uqc' => 'nullable|string|max:10',
+            'items.*.cgst' => 'nullable|numeric|min:0|max:100',
+            'items.*.sgst' => 'nullable|numeric|min:0|max:100',
+            'items.*.igst' => 'nullable|numeric|min:0|max:100',
+            'items.*.item_remarks' => 'nullable|string|max:1000',
+            'items.*.manufacturing_notes' => 'nullable|string|max:2000',
         ]);
 
         DB::beginTransaction();
@@ -608,20 +606,20 @@ class PurchaseOrderController extends Controller
 
             // Update PO header
             $po->update([
-                'po_number' => $request->po_number,
-                'po_date' => $request->po_date,
-                'customer_name' => $request->customer_name,
-                'customer_address' => $request->customer_address,
-                'customer_gstin' => $request->customer_gstin,
-                'customer_email' => $request->customer_email,
-                'remarks' => $request->remarks,
+                'po_number' => $validated['po_number'],
+                'po_date' => $validated['po_date'],
+                'customer_name' => $validated['customer_name'],
+                'customer_address' => $validated['customer_address'] ?? null,
+                'customer_gstin' => $validated['customer_gstin'] ?? null,
+                'customer_email' => $validated['customer_email'] ?? null,
+                'remarks' => $validated['remarks'] ?? null,
             ]);
 
             // Sync items: update existing by id, delete removed, create new
             $existingItemIds = $po->items->pluck('id')->toArray();
             $submittedIds = [];
 
-            foreach ($request->items as $item) {
+            foreach ($validated['items'] as $item) {
                 $qty = floatval($item['quantity']);
                 $rate = floatval($item['rate']);
                 $cgst = floatval($item['cgst'] ?? 0);
@@ -678,6 +676,14 @@ class PurchaseOrderController extends Controller
             ]);
 
             DB::commit();
+
+            PushNotificationService::sendToRoles(
+                ['admin', 'manager', 'partner'],
+                'Purchase Order Edited 📝',
+                "PO-{$po->po_number} has been modified manually.",
+                'purchase_order_edited',
+                ['po_id' => $po->id]
+            );
 
             return response()->json([
                 'message' => 'Purchase Order updated successfully.',
@@ -909,11 +915,11 @@ class PurchaseOrderController extends Controller
         }
         $revision = \App\Models\PurchaseOrderRevision::findOrFail($id);
         
-        $request->validate([
+        $validated = $request->validate([
             'action' => 'required|string|in:ignore,update_existing,save_as_revision',
         ]);
         
-        $action = $request->action;
+        $action = $validated['action'];
         $user = auth()->user();
         
         DB::beginTransaction();
@@ -1174,7 +1180,7 @@ class PurchaseOrderController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'delete_reason' => 'required|string|max:1000'
         ]);
 

@@ -4,12 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\BroadcastsUpdates;
 
 class JobCard extends Model
 {
     use HasFactory, SoftDeletes, BroadcastsUpdates;
+    use LogsActivity;
 
     protected $fillable = [
         'job_card_number',
@@ -28,6 +30,8 @@ class JobCard extends Model
         'archived_by',
         'deleted_by',
         'delete_reason',
+        'machining_started_at',
+        'machining_duration_seconds',
     ];
 
     public function challanItem()

@@ -66,7 +66,7 @@ export default function PayrollManagement({ user }) {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.get('http://127.0.0.1:8000/api/payroll/stats', {
+      const res = await axios.get('/api/payroll/stats', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStats(res.data);
@@ -79,7 +79,7 @@ export default function PayrollManagement({ user }) {
   const fetchAdvances = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.get('http://127.0.0.1:8000/api/payroll-advances', {
+      const res = await axios.get('/api/payroll-advances', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAdvances(res.data);
@@ -94,7 +94,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.get('http://127.0.0.1:8000/api/payroll', {
+      const res = await axios.get('/api/payroll', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPayrollRuns(res.data);
@@ -110,7 +110,7 @@ export default function PayrollManagement({ user }) {
   const fetchUsers = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.get('http://127.0.0.1:8000/api/users', {
+      const res = await axios.get('/api/users', {
         headers: { Authorization: `Bearer ${token}` }
       });
       // Filter out admins and partners
@@ -140,7 +140,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.post('http://127.0.0.1:8000/api/payroll/calculate', {
+      const res = await axios.post('/api/payroll/calculate', {
         month: processMonth,
         year: processYear
       }, {
@@ -183,7 +183,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.post('http://127.0.0.1:8000/api/payroll/save', {
+      const res = await axios.post('/api/payroll/save', {
         month: processMonth,
         year: processYear,
         items: draftItems
@@ -215,7 +215,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.post('http://127.0.0.1:8000/api/payroll-advances', {
+      const res = await axios.post('/api/payroll-advances', {
         user_id: advanceUser,
         amount: advanceAmount,
         date: advanceDate,
@@ -243,7 +243,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.delete(`http://127.0.0.1:8000/api/payroll-advances/${id}`, {
+      const res = await axios.delete(`/api/payroll-advances/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setFeedback({ type: 'success', message: res.data.message });
@@ -262,7 +262,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.get(`http://127.0.0.1:8000/api/payroll/${run.id}`, {
+      const res = await axios.get(`/api/payroll/${run.id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRunItems(res.data.items);
@@ -280,7 +280,7 @@ export default function PayrollManagement({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.put(`http://127.0.0.1:8000/api/payroll/items/${itemId}/pay`, {}, {
+      const res = await axios.put(`/api/payroll/items/${itemId}/pay`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -310,7 +310,7 @@ export default function PayrollManagement({ user }) {
     setPayslipData(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const res = await axios.get(`http://127.0.0.1:8000/api/payroll/items/${itemId}/slip`, {
+      const res = await axios.get(`/api/payroll/items/${itemId}/slip`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPayslipData(res.data);

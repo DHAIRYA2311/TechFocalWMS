@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -99,7 +100,7 @@ export default function InventoryScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`${apiUrl}/api/me`, { headers });
+      const res = await offlineGet(`${apiUrl}/api/me`, { headers });
       if (res.data?.user) {
         setUserRole(res.data.user.role);
       }
@@ -1078,3 +1079,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   }
 });
+

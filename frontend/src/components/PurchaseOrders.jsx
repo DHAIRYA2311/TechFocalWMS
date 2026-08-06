@@ -293,6 +293,7 @@ export default function PurchaseOrders() {
   const navigate = useNavigate();
   const printRef = useRef(null);
   const [pos, setPos] = useState([]);
+  const [customersList, setCustomersList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [filter, setFilter] = useState('draft_review');
@@ -304,6 +305,7 @@ export default function PurchaseOrders() {
   const [editingPo, setEditingPo] = useState(null);
   const [approving, setApproving] = useState(false);
   const [isLineItemsMaximized, setIsLineItemsMaximized] = useState(false);
+  const [expandedItemIndex, setExpandedItemIndex] = useState(null);
 
   // Edit mode for approved POs
   const [isEditing, setIsEditing] = useState(false);
@@ -335,7 +337,7 @@ export default function PurchaseOrders() {
   const fetchPos = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('http://127.0.0.1:8000/api/purchase-orders');
+      const response = await axios.get('/api/purchase-orders');
       setPos(response.data);
     } catch (err) {
       console.error(err);
@@ -347,7 +349,7 @@ export default function PurchaseOrders() {
 
   const fetchRevisions = async () => {
     try {
-      const response = await axios.get('http://127.0.0.1:8000/api/purchase-orders/revisions');
+      const response = await axios.get('/api/purchase-orders/revisions');
       setRevisions(response.data);
     } catch (err) {
       console.error('Failed to load purchase order revisions:', err);
@@ -356,7 +358,7 @@ export default function PurchaseOrders() {
 
   const fetchSettings = async () => {
     try {
-      const response = await axios.get('http://127.0.0.1:8000/api/settings');
+      const response = await axios.get('/api/settings');
       if (response.data && response.data.po_last_fetch_at) {
         setLastFetchTime(response.data.po_last_fetch_at);
       }
@@ -365,10 +367,20 @@ export default function PurchaseOrders() {
     }
   };
 
+  const fetchCustomers = async () => {
+    try {
+      const response = await axios.get('/api/customers');
+      setCustomersList(response.data);
+    } catch (err) {
+      console.error('Failed to fetch customers:', err);
+    }
+  };
+
   useEffect(() => {
     fetchPos();
     fetchRevisions();
     fetchSettings();
+    fetchCustomers();
   }, []);
 
   useEffect(() => {
@@ -387,7 +399,7 @@ export default function PurchaseOrders() {
     setFetching(true);
     setFeedback(null);
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/purchase-orders/fetch');
+      const response = await axios.post('/api/purchase-orders/fetch');
       setFeedback({ type: 'success', message: response.data.message });
       if (response.data && response.data.last_fetch_at) {
         setLastFetchTime(response.data.last_fetch_at);
@@ -405,7 +417,7 @@ export default function PurchaseOrders() {
   const handleOpenReview = async (poId) => {
     setLoading(true);
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${poId}`);
+      const response = await axios.get(`/api/purchase-orders/${poId}`);
       setSelectedPo(response.data);
       setEditingPo({
         ...response.data,
@@ -413,7 +425,7 @@ export default function PurchaseOrders() {
       });
 
       // Fetch Audit Logs
-      const logsResponse = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${poId}/audit-logs`);
+      const logsResponse = await axios.get(`/api/purchase-orders/${poId}/audit-logs`);
       setAuditLogs(logsResponse.data);
       setActivePoTab('details');
     } catch (err) {
@@ -453,14 +465,14 @@ export default function PurchaseOrders() {
     setEditSaving(true);
     setFeedback(null);
     try {
-      const response = await axios.put(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}`, editingPo);
+      const response = await axios.put(`/api/purchase-orders/${editingPo.id}`, editingPo);
       setFeedback({ type: 'success', message: response.data.message });
       const refreshed = response.data.po;
       setSelectedPo(refreshed);
       setEditingPo(refreshed);
       setIsEditing(false);
       // Refresh audit logs
-      const logsRes = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}/audit-logs`);
+      const logsRes = await axios.get(`/api/purchase-orders/${editingPo.id}/audit-logs`);
       setAuditLogs(logsRes.data);
       fetchPos();
     } catch (err) {
@@ -476,7 +488,7 @@ export default function PurchaseOrders() {
     setDuplicating(true);
     setFeedback(null);
     try {
-      const response = await axios.post(`http://127.0.0.1:8000/api/purchase-orders/${selectedPo.id}/duplicate`);
+      const response = await axios.post(`/api/purchase-orders/${selectedPo.id}/duplicate`);
       setFeedback({ type: 'success', message: response.data.message });
       fetchPos();
       setTimeout(() => {
@@ -498,7 +510,7 @@ export default function PurchaseOrders() {
   const handleDownloadPdf = async () => {
     // Scenario A: original PDF from email exists
     if (editingPo?.pdf_path) {
-      const url = `http://127.0.0.1:8000/${editingPo.pdf_path}`;
+      const url = `${import.meta.env.VITE_API_URL}/${editingPo.pdf_path}`;
       const link = document.createElement('a');
       link.href = url;
       link.download = editingPo.pdf_path.split('/').pop();
@@ -517,7 +529,7 @@ export default function PurchaseOrders() {
     setChallanInfo(null);
     setFeedback(null);
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${selectedPo.id}/incoming-challan`);
+      const response = await axios.get(`/api/purchase-orders/${selectedPo.id}/incoming-challan`);
       setChallanInfo(response.data);
       if (response.data.jobs_info.all_done) {
         setFeedback({ type: 'danger', message: 'All items in this Purchase Order already have Job Cards. No new jobs to create.' });
@@ -554,7 +566,7 @@ export default function PurchaseOrders() {
 
       // Fetch all incoming challans to populate the "existing" dropdown
       try {
-        const challanListRes = await axios.get('http://127.0.0.1:8000/api/incoming-challans');
+        const challanListRes = await axios.get('/api/incoming-challans');
         setAllChallans(challanListRes.data || []);
       } catch (err) {
         console.error('Failed to load all challans', err);
@@ -587,7 +599,7 @@ export default function PurchaseOrders() {
     setJobsCreating(true);
     setFeedback(null);
     try {
-      const response = await axios.post(`http://127.0.0.1:8000/api/purchase-orders/${selectedPo.id}/convert-jobs`, {
+      const response = await axios.post(`/api/purchase-orders/${selectedPo.id}/convert-jobs`, {
         po_item_ids: jobItemIds,
         challan_option: challanOption,
         challan_number: challanNumber,
@@ -606,7 +618,7 @@ export default function PurchaseOrders() {
       setAllChallans([]);
 
       // Refresh PO data
-      const poRes = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${selectedPo.id}`);
+      const poRes = await axios.get(`/api/purchase-orders/${selectedPo.id}`);
       setSelectedPo(poRes.data);
       setEditingPo(poRes.data);
       fetchPos();
@@ -621,7 +633,7 @@ export default function PurchaseOrders() {
   const handleOpenCompare = async (revisionId) => {
     setLoading(true);
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/revisions/${revisionId}`);
+      const response = await axios.get(`/api/purchase-orders/revisions/${revisionId}`);
       setSelectedRevision(response.data);
     } catch (err) {
       console.error(err);
@@ -637,7 +649,7 @@ export default function PurchaseOrders() {
     setFeedback(null);
     try {
       const response = await axios.post(
-        `http://127.0.0.1:8000/api/purchase-orders/revisions/${selectedRevision.revision.id}/action`,
+        `/api/purchase-orders/revisions/${selectedRevision.revision.id}/action`,
         { action }
       );
       setFeedback({ type: 'success', message: response.data.message });
@@ -734,7 +746,7 @@ export default function PurchaseOrders() {
     setFeedback(null);
 
     try {
-      const response = await axios.post(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}/approve`, editingPo);
+      const response = await axios.post(`/api/purchase-orders/${editingPo.id}/approve`, editingPo);
       setFeedback({ type: 'success', message: response.data.message });
       
       // Close editor and refresh list
@@ -762,7 +774,7 @@ export default function PurchaseOrders() {
       setApproving(true);
       setFeedback(null);
       try {
-        const response = await axios.put(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}/status`, {
+        const response = await axios.put(`/api/purchase-orders/${editingPo.id}/status`, {
           status: newStatus,
           remarks: reason
         });
@@ -781,7 +793,7 @@ export default function PurchaseOrders() {
       setApproving(true);
       setFeedback(null);
       try {
-        const response = await axios.put(`http://127.0.0.1:8000/api/purchase-orders/${editingPo.id}/status`, {
+        const response = await axios.put(`/api/purchase-orders/${editingPo.id}/status`, {
           status: newStatus
         });
         setFeedback({ type: 'success', message: response.data.message });
@@ -803,6 +815,7 @@ export default function PurchaseOrders() {
       status: 'draft_review',
       po_number: '',
       po_date: new Date().toISOString().split('T')[0],
+      customer_id: '',
       customer_name: '',
       customer_email: '',
       customer_address: '',
@@ -865,7 +878,7 @@ export default function PurchaseOrders() {
         ...editingPo,
         status: status
       };
-      const response = await axios.post(`http://127.0.0.1:8000/api/purchase-orders`, payload);
+      const response = await axios.post(`/api/purchase-orders`, payload);
       setFeedback({ type: 'success', message: response.data.message });
       
       setTimeout(() => {
@@ -1188,7 +1201,7 @@ export default function PurchaseOrders() {
               </div>
               {revision?.pdf_path && (
                 <a 
-                  href={`http://127.0.0.1:8000/${revision.pdf_path}`} 
+                  href={`${import.meta.env.VITE_API_URL}/${revision.pdf_path}`} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-primary)' }}
@@ -1201,7 +1214,7 @@ export default function PurchaseOrders() {
             <div style={{ flexGrow: 1, backgroundColor: '#525659' }}>
               {revision?.pdf_path ? (
                 <iframe 
-                  src={`http://127.0.0.1:8000/${revision.pdf_path}`} 
+                  src={`${import.meta.env.VITE_API_URL}/${revision.pdf_path}`} 
                   width="100%" 
                   height="100%" 
                   style={{ border: 'none' }}
@@ -1276,7 +1289,7 @@ export default function PurchaseOrders() {
                 <th style={{ padding: '8px', minWidth: '130px' }}>Delivery Date</th>
                 <th style={{ padding: '8px', minWidth: '180px' }}>Item Remarks</th>
                 <th style={{ padding: '8px', minWidth: '180px' }}>Mfg Notes</th>
-                {canEdit && <th style={{ padding: '8px', width: '50px', textAlign: 'center' }}></th>}
+                <th style={{ padding: '8px', width: '80px', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1330,15 +1343,16 @@ export default function PurchaseOrders() {
                   <td style={{ padding: '6px' }}>
                     <textarea className="form-input" value={item.manufacturing_notes || ''} onChange={(e) => handleItemFieldChange(idx, 'manufacturing_notes', e.target.value)} disabled={!canEdit} style={{ width: '100%', padding: '6px', fontSize: '12px', resize: 'vertical', minHeight: '32px' }} rows={1} />
                   </td>
-                  {canEdit && (
-                    <td style={{ padding: '6px', textAlign: 'center' }}>
-                      {editingPo.items.length > 1 && (
-                        <button type="button" onClick={() => handleDeleteItemRow(idx)} style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: '4px' }}>
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </td>
-                  )}
+                  <td style={{ padding: '6px', textAlign: 'center', display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                    <button type="button" onClick={() => setExpandedItemIndex(idx)} title="Expand details" style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', padding: '4px' }}>
+                      <Maximize2 size={16} />
+                    </button>
+                    {canEdit && editingPo.items.length > 1 && (
+                      <button type="button" onClick={() => handleDeleteItemRow(idx)} title="Delete item" style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', padding: '4px' }}>
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1893,6 +1907,25 @@ export default function PurchaseOrders() {
               >
                 Audit History ({auditLogs.length})
               </button>
+              {selectedPo && selectedPo.id !== 'new' && (
+                <button
+                  type="button"
+                  onClick={() => setActivePoTab('billing')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activePoTab === 'billing' ? '2px solid var(--color-primary)' : 'none',
+                    color: activePoTab === 'billing' ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                    fontWeight: '600',
+                    padding: '4px 8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    outline: 'none'
+                  }}
+                >
+                  Invoices & Challans
+                </button>
+              )}
             </div>
 
             {activePoTab === 'details' ? (
@@ -1924,6 +1957,32 @@ export default function PurchaseOrders() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group">
+                    <label className="form-label"><User size={12} /> Select Customer *</label>
+                    <select
+                      className="form-input"
+                      value={editingPo.customer_id || ''}
+                      onChange={(e) => {
+                        const custId = e.target.value;
+                        const cust = customersList.find(c => c.id == custId);
+                        setEditingPo(prev => ({
+                          ...prev,
+                          customer_id: custId,
+                          customer_name: cust ? cust.name : '',
+                          customer_email: cust ? (cust.email || '') : '',
+                          customer_address: cust ? (cust.address || '') : '',
+                          customer_gstin: cust ? (cust.gstin || '') : ''
+                        }));
+                      }}
+                      style={{ paddingLeft: '12px', appearance: 'auto' }}
+                      disabled={selectedPo.id !== 'new' && !isEditing && selectedPo.status !== 'draft_review'}
+                    >
+                      <option value="">-- Custom (No Saved Customer) --</option>
+                      {customersList.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="form-group">
                     <label className="form-label"><User size={12} /> Customer Name</label>
                     <input 
@@ -1993,20 +2052,20 @@ export default function PurchaseOrders() {
                 {/* Line Items Table */}
                 {renderLineItemsGrid(false)}
               </>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            ) : activePoTab === 'history' ? (
+              <div style={{ overflowY: 'auto', flexGrow: 1 }}>
                 {auditLogs.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '30px 10px', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                    No audit history logs recorded for this Purchase Order yet.
+                  <div style={{ padding: '20px', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                    No audit logs available for this Purchase Order.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {auditLogs.map((log) => {
                       const diffs = getAuditLogDiff(log);
                       return (
                         <div key={log.id} style={{
                           border: '1px solid var(--color-border)',
-                          borderRadius: '8px',
+                          borderRadius: 'var(--radius-sm)',
                           padding: '12px',
                           backgroundColor: 'var(--color-bg-base)',
                           fontSize: '12px'
@@ -2060,6 +2119,100 @@ export default function PurchaseOrders() {
                   </div>
                 )}
               </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flexGrow: 1, overflowY: 'auto' }}>
+                <div>
+                  <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: 'var(--color-text-main)' }}>Linked Tax Invoices</h3>
+                  {(!selectedPo.invoices || selectedPo.invoices.length === 0) ? (
+                    <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: '4px' }}>
+                      No tax invoices associated with this Purchase Order.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {selectedPo.invoices.map(invoice => (
+                        <div 
+                          key={invoice.id} 
+                          onClick={() => navigate('/invoices', { state: { viewInvoiceId: invoice.id } })}
+                          style={{
+                            padding: '12px',
+                            backgroundColor: 'var(--color-bg-base)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-sm)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <div>
+                            <strong style={{ fontSize: '13px', color: 'var(--color-primary)' }}>{invoice.invoice_number}</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '10px' }}>
+                              {new Date(invoice.invoice_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <strong style={{ fontSize: '13px' }}>₹{parseFloat(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                            <span style={{ 
+                              display: 'block', 
+                              fontSize: '10px', 
+                              fontWeight: '600', 
+                              color: invoice.status === 'paid' ? 'var(--color-success)' : 'var(--color-text-muted)' 
+                            }}>
+                              {invoice.status.toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginTop: '10px' }}>
+                  <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: 'var(--color-text-main)' }}>Linked Delivery Challans</h3>
+                  {(!(selectedPo.delivery_challans || selectedPo.deliveryChallans) || (selectedPo.delivery_challans || selectedPo.deliveryChallans).length === 0) ? (
+                    <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: '4px' }}>
+                      No delivery challans associated with this Purchase Order.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {(selectedPo.delivery_challans || selectedPo.deliveryChallans).map(dc => (
+                        <div 
+                          key={dc.id} 
+                          onClick={() => navigate('/delivery-challans', { state: { viewDcId: dc.id } })}
+                          style={{
+                            padding: '12px',
+                            backgroundColor: 'var(--color-bg-base)',
+                            border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-sm)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <div>
+                            <strong style={{ fontSize: '13px', color: 'var(--color-primary)' }}>{dc.challan_number}</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '10px' }}>
+                              {new Date(dc.challan_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div>
+                            {dc.invoice_id ? (
+                              <span style={{ fontSize: '11px', backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)', padding: '2px 8px', borderRadius: '12px', fontWeight: '600' }}>
+                                INVOICED
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '11px', backgroundColor: '#e2e8f0', color: '#64748b', padding: '2px 8px', borderRadius: '12px', fontWeight: '600' }}>
+                                DISPATCHED
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
           </div>
@@ -2075,7 +2228,7 @@ export default function PurchaseOrders() {
               </div>
               {editingPo.pdf_path && (
                 <a 
-                  href={`http://127.0.0.1:8000/${editingPo.pdf_path}`} 
+                  href={`${import.meta.env.VITE_API_URL}/${editingPo.pdf_path}`} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-primary)' }}
@@ -2088,7 +2241,7 @@ export default function PurchaseOrders() {
             <div style={{ flexGrow: 1, backgroundColor: '#525659' }}>
               {editingPo.pdf_path ? (
                 <iframe 
-                  src={`http://127.0.0.1:8000/${editingPo.pdf_path}`} 
+                  src={`${import.meta.env.VITE_API_URL}/${editingPo.pdf_path}`} 
                   width="100%" 
                   height="100%" 
                   style={{ border: 'none' }}
@@ -2103,6 +2256,79 @@ export default function PurchaseOrders() {
           </div>
 
         </div>
+
+        {/* Expanded Line Item Modal */}
+        {expandedItemIndex !== null && editingPo && editingPo.items[expandedItemIndex] && (
+          <div className="modal-overlay" onClick={() => setExpandedItemIndex(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '600px', maxWidth: '95vw', padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-text-main)' }}>Item Details (Row {expandedItemIndex + 1})</h3>
+                <button onClick={() => setExpandedItemIndex(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                  <X size={20} />
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+                <div className="form-group">
+                  <label className="form-label">Item Code / Drawing No.</label>
+                  <input type="text" className="form-input" value={editingPo.items[expandedItemIndex].item_code || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'item_code', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">HSN/SAC</label>
+                  <input type="text" className="form-input" value={editingPo.items[expandedItemIndex].hsn_sac || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'hsn_sac', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Description</label>
+                  <textarea className="form-input" rows={2} value={editingPo.items[expandedItemIndex].description || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'description', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Quantity</label>
+                  <input type="number" step="0.01" className="form-input" value={editingPo.items[expandedItemIndex].quantity || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'quantity', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Rate (₹)</label>
+                  <input type="number" step="0.01" className="form-input" value={editingPo.items[expandedItemIndex].rate || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'rate', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Unit</label>
+                  <input type="text" className="form-input" value={editingPo.items[expandedItemIndex].unit || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'unit', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">UQC</label>
+                  <input type="text" className="form-input" value={editingPo.items[expandedItemIndex].uqc || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'uqc', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">CGST %</label>
+                  <input type="number" step="0.01" className="form-input" value={editingPo.items[expandedItemIndex].cgst || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'cgst', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">SGST %</label>
+                  <input type="number" step="0.01" className="form-input" value={editingPo.items[expandedItemIndex].sgst || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'sgst', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">IGST %</label>
+                  <input type="number" step="0.01" className="form-input" value={editingPo.items[expandedItemIndex].igst || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'igst', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Delivery Date</label>
+                  <input type="date" className="form-input" value={editingPo.items[expandedItemIndex].delivery_date || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'delivery_date', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Item Remarks</label>
+                  <textarea className="form-input" rows={2} value={editingPo.items[expandedItemIndex].item_remarks || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'item_remarks', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Manufacturing Notes</label>
+                  <textarea className="form-input" rows={2} value={editingPo.items[expandedItemIndex].manufacturing_notes || ''} onChange={(e) => handleItemFieldChange(expandedItemIndex, 'manufacturing_notes', e.target.value)} disabled={!canEdit} />
+                </div>
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--color-border)', paddingTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setExpandedItemIndex(null)} className="form-button" style={{ width: 'auto' }}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Maximize Line Items Modal */}
         {isLineItemsMaximized && (

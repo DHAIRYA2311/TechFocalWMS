@@ -22,17 +22,43 @@ class PushNotificationService
      */
     public static function sendToRoles(array $roles, string $title, string $message, string $type, array $data = []): void
     {
-        // Check settings overrides before processing
-        if (in_array($type, ['purchase_order', 'po_revision', 'po_duplicate'])) {
-            $poEnabled = Setting::getVal('notif_po_enabled', 'true') === 'true';
-            if (!$poEnabled) {
-                return;
-            }
-        }
+        // Granular settings dictionary mapping notification types to their Setting key
+        $settingKeyMap = [
+            // Purchase Orders
+            'purchase_order' => 'notif_po_new',
+            'purchase_order_approved' => 'notif_po_accepted',
+            'purchase_order_rejected' => 'notif_po_rejected',
+            'purchase_order_review' => 'notif_po_review',
+            'purchase_order_edited' => 'notif_po_edited',
+            'purchase_order_fail' => 'notif_po_failed',
+            'po_duplicate' => 'notif_po_duplicate',
+            'po_revision' => 'notif_po_edited', // groups with edited
+            
+            // Invoices
+            'invoice_generated' => 'notif_inv_generated',
+            'invoice_payment' => 'notif_inv_payment',
+            'invoice_overdue' => 'notif_inv_overdue',
+            'invoice_cancelled' => 'notif_inv_cancelled',
+            'invoice_edited' => 'notif_inv_edited',
+            
+            // Attendance
+            'attendance_reminder' => 'notif_att_reminder',
+            'attendance_late' => 'notif_att_late',
+            'attendance_correction' => 'notif_att_correction',
+            
+            // Jobs and Operations
+            'machine_maintenance_req' => 'notif_machine_maint',
+            'machine_idle' => 'notif_machine_idle',
+            'job_delayed' => 'notif_job_delayed',
+            'low_inventory' => 'notify_inventory',
+            'workshop_alert_email_sync' => 'notif_email_sync_failed',
+        ];
 
-        if ($type === 'attendance_reminder') {
-            $attEnabled = Setting::getVal('notif_attendance_enabled', 'true') === 'true';
-            if (!$attEnabled) {
+        // Check if a granular setting exists for this notification type
+        $settingKey = $settingKeyMap[$type] ?? null;
+        if ($settingKey) {
+            $isEnabled = Setting::getVal($settingKey, 'true') === 'true';
+            if (!$isEnabled) {
                 return;
             }
         }

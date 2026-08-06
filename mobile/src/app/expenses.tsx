@@ -20,6 +20,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
+import { offlinePost } from '@/utils/offlineApi';
+import TechFocalLoader from '@/components/tech-focal-loader';
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -135,8 +138,8 @@ export default function ExpensesScreen() {
       if (selectedPaymentMode !== 'all') params.payment_mode = selectedPaymentMode;
 
       const [expensesRes, meRes] = await Promise.all([
-        axios.get(`${apiUrl}/api/expenses`, { headers, params }),
-        axios.get(`${apiUrl}/api/me`, { headers }).catch(() => null)
+        offlineGet(`${apiUrl}/api/expenses`, { headers, params }),
+        offlineGet(`${apiUrl}/api/me`, { headers }).catch(() => null)
       ]);
 
       setExpenses(expensesRes.data.expenses || []);
@@ -213,7 +216,7 @@ export default function ExpensesScreen() {
         description: formDescription || null,
       };
 
-      await axios.post(`${apiUrl}/api/expenses`, payload, { headers });
+      await offlinePost(`${apiUrl}/api/expenses`, payload);
       
       Alert.alert('Success', 'Expense logged successfully.');
       setShowAddModal(false);
@@ -441,8 +444,7 @@ export default function ExpensesScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {loading && expenses.length === 0 ? (
           <View style={styles.centerSpinner}>
-            <ActivityIndicator size="large" color="#2563eb" />
-            <Text style={styles.spinnerText}>Loading workshop ledger records...</Text>
+            <TechFocalLoader />
           </View>
         ) : expenses.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -1140,3 +1142,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   }
 });
+

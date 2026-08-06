@@ -7,31 +7,22 @@ import {
   ActivityIndicator, 
   ScrollView, 
   Alert,
-  Dimensions,
-  StatusBar,
-  Platform
+  StatusBar
 } from 'react-native';
-import axios from 'axios';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
-const UserCheck = Lucide.UserCheck as any;
-const Briefcase = Lucide.Briefcase as any;
-const FileText = Lucide.FileText as any;
-const Cpu = Lucide.Cpu as any;
-const DollarSign = Lucide.DollarSign as any;
-const Archive = Lucide.Archive as any;
-const ClipboardList = Lucide.ClipboardList as any;
-const LogOut = Lucide.LogOut as any;
-const RefreshCw = Lucide.RefreshCw as any;
-const User = Lucide.User as any;
-const Users = Lucide.Users as any;
-const Activity = Lucide.Activity as any;
+import { offlineGet } from '@/utils/offlineApi';
+import TechFocalLoader from '@/components/tech-focal-loader';
 
-const { width } = Dimensions.get('window');
-const isTablet = width > 600;
+// Icons
+const {
+  UserCheck, Briefcase, FileText, Cpu, DollarSign, Archive, ClipboardList,
+  LogOut, RefreshCw, Settings, User, Users, Activity, CheckCircle, AlertTriangle,
+  AlertCircle, Plus, Wrench, Factory, List, Clock, Wifi, WifiOff
+} = Lucide as any;
 
 export default function HomeScreen() {
   const { token, apiUrl, unpairDevice } = useAuth();
@@ -43,51 +34,48 @@ export default function HomeScreen() {
   });
   
   const [profile, setProfile] = useState<any>(null);
-  const [stats, setStats] = useState<any>({
-    activeJobs: 0,
-    activeMachines: 0,
-    clockedInCount: 0,
-    pendingPO: 0
-  });
+  const [dashboardData, setDashboardData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    // Check if LaunchScreen successfully pre-fetched data
+    const prefetched = (global as any).__PREFETCHED_DASHBOARD;
+    if (prefetched && prefetched.dashboardData) {
+      setProfile(prefetched.profile);
+      setDashboardData(prefetched.dashboardData);
+      setIsOffline(prefetched.isOffline);
+      setLastSync(new Date());
+      setLoading(false);
+      
+      // Clear it so pull-to-refresh will actually fetch later
+      delete (global as any).__PREFETCHED_DASHBOARD;
+    } else {
+      fetchData(false);
+    }
+  }, []);
+
+  const fetchData = async (isRefresh = false) => {
     if (!token || !apiUrl) return;
+    
+    // Only set loading if we are NOT refreshing
+    if (!isRefresh) setLoading(true);
     
     try {
       const headers = { Authorization: `Bearer ${token}` };
       
       // Fetch authenticated profile
-      const profileRes = await axios.get(`${apiUrl}/api/me`, { headers });
+      const profileRes = await offlineGet(`${apiUrl}/api/me`, { headers });
       setProfile(profileRes.data.user);
 
-      // Fetch dashboard metrics in parallel (with safe fallbacks)
-      try {
-        const [jobsRes, machinesRes, attendanceRes, poRes] = await Promise.all([
-          axios.get(`${apiUrl}/api/jobs`, { headers }).catch(() => ({ data: [] })),
-          axios.get(`${apiUrl}/api/machines/stats`, { headers }).catch(() => ({ data: { active_count: 0 } })),
-          axios.get(`${apiUrl}/api/attendance/stats`, { headers }).catch(() => ({ data: { today: { present: 0 } } })),
-          axios.get(`${apiUrl}/api/purchase-orders`, { headers }).catch(() => ({ data: [] }))
-        ]);
-
-        const runningJobs = Array.isArray(jobsRes.data) 
-          ? jobsRes.data.filter((j: any) => j.status === 'in_progress' || j.status === 'inspection').length 
-          : 0;
-
-        const pendingPOs = Array.isArray(poRes.data)
-          ? poRes.data.filter((po: any) => po.status !== 'completed' && po.status !== 'rejected').length
-          : 0;
-
-        setStats({
-          activeJobs: runningJobs,
-          activeMachines: machinesRes.data?.active_count || 0,
-          clockedInCount: attendanceRes.data?.today?.present || 0,
-          pendingPO: pendingPOs
-        });
-      } catch (err) {
-        console.warn('Failed to load dashboard metrics:', err);
-      }
+      // Fetch unified dashboard data
+      const dashboardRes = await offlineGet(`${apiUrl}/api/dashboard`, { headers });
+      setDashboardData((dashboardRes as any).data || dashboardRes.data);
+      
+      setIsOffline((dashboardRes as any).offline || false);
+      setLastSync(new Date());
 
     } catch (err: any) {
       console.error('Data loading failed:', err);
@@ -104,169 +92,83 @@ export default function HomeScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // Notifications Poller
-  useEffect(() => {
-    if (!token || !apiUrl) return;
-
-    let lastNotificationId: number | null = null;
-
-    const pollNotifications = async () => {
-      try {
-        const headers = { Authorization: `Bearer ${token}` };
-        const res = await axios.get(`${apiUrl}/api/notifications`, { headers });
-        const list = res.data;
-        if (Array.isArray(list) && list.length > 0) {
-          const newest = list[0];
-          
-          if (lastNotificationId !== null && newest.id > lastNotificationId && !newest.read_at) {
-            Alert.alert(newest.title, newest.message, [
-              { text: 'View PO', onPress: () => router.push('/purchase-orders') },
-              { text: 'Dismiss', style: 'cancel' }
-            ]);
-          }
-          lastNotificationId = newest.id;
-        }
-      } catch (err) {
-        console.warn('Failed to poll notifications:', err);
-      }
-    };
-
-    const initialTimeout = setTimeout(pollNotifications, 2000);
-    const interval = setInterval(pollNotifications, 30000);
-
-    return () => {
-      clearTimeout(initialTimeout);
-      clearInterval(interval);
-    };
-  }, [token, apiUrl]);
-
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchData();
+    fetchData(true);
   };
 
   const handleUnpair = () => {
     Alert.alert(
       'Unpair Device',
-      'Are you sure you want to unpair this device from the workshop portal? You will need to scan a new QR code or enter a PIN to log in again.',
+      'Are you sure you want to unpair this device?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Unpair', 
-          style: 'destructive',
-          onPress: async () => {
-            await unpairDevice();
-          }
-        }
+        { text: 'Unpair', style: 'destructive', onPress: async () => await unpairDevice() }
       ]
     );
   };
 
   if (loading) {
+    return <TechFocalLoader />;
+  }
+
+  if (!dashboardData) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Fetching system metrics...</Text>
+        <Text style={{color: '#ef4444'}}>Failed to load dashboard data.</Text>
+        <TouchableOpacity style={{marginTop: 20}} onPress={handleRefresh}>
+          <Text style={{color: '#2563eb'}}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const modules = [
-    ...(profile && ['admin', 'partner', 'manager', 'supervisor'].includes(profile.role) ? [{
-      title: 'Staff Profiles',
-      desc: 'Directory & ID Badges',
-      icon: <Users size={28} color="#0f172a" />,
-      color: '#0f172a',
-      bgColor: '#f1f5f9',
-      route: 'Staffs'
-    }] : []),
-    {
-      title: 'Attendance',
-      desc: `${stats.clockedInCount} Workers Active`,
-      icon: <UserCheck size={28} color="#22c55e" />,
-      color: '#22c55e',
-      bgColor: '#f0fdf4',
-      route: 'Attendance'
-    },
-    {
-      title: 'Job Cards',
-      desc: `${stats.activeJobs} Assigned Jobs`,
-      icon: <Briefcase size={28} color="#2563eb" />,
-      color: '#2563eb',
-      bgColor: '#eff6ff',
-      route: 'Jobs'
-    },
-    {
-      title: 'Purchase Orders',
-      desc: `${stats.pendingPO} Open Orders`,
-      icon: <FileText size={28} color="#f59e0b" />,
-      color: '#f59e0b',
-      bgColor: '#fefbeb',
-      route: 'PurchaseOrders'
-    },
-    {
-      title: 'Machine logs',
-      desc: 'Monitor CNC & Lathes',
-      icon: <Cpu size={28} color="#06b6d4" />,
-      color: '#06b6d4',
-      bgColor: '#ecfeff',
-      route: 'Machines'
-    },
-    {
-      title: 'Expenses',
-      desc: 'Log Workshop Claims',
-      icon: <DollarSign size={28} color="#ef4444" />,
-      color: '#ef4444',
-      bgColor: '#fef2f2',
-      route: 'Expenses'
-    },
-    {
-      title: 'Challans',
-      desc: 'Incoming & Delivery Notes',
-      icon: <ClipboardList size={28} color="#8b5cf6" />,
-      color: '#8b5cf6',
-      bgColor: '#f5f3ff',
-      route: 'Challans'
-    },
-    {
-      title: 'Inventory',
-      desc: 'Manage Stock & Locations',
-      icon: <Archive size={28} color="#3b82f6" />,
-      color: '#3b82f6',
-      bgColor: '#eff6ff',
-      route: 'Inventory'
+  const { kpis, workshop_status, priority_actions, production_progress, modules_data, machines, timeline } = dashboardData;
+
+  const getStatusColor = (level: string) => {
+    switch(level) {
+      case 'critical': return '#ef4444';
+      case 'warning': return '#f59e0b';
+      case 'normal': 
+      default: return '#22c55e';
     }
-  ];
+  };
+
+  const statusColor = getStatusColor(workshop_status.level);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       
-      {/* Header bar */}
+      {/* Dynamic Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <View>
-          <Text style={styles.appTitle}>TechFocal WMS</Text>
-          <View style={styles.profileRow}>
-            <User size={14} color="#64748b" />
-            <Text style={styles.profileText}>
-              Paired by: <Text style={styles.boldText}>{profile?.name || 'Administrator'}</Text> ({profile?.role || 'admin'})
+        <View style={styles.headerLeft}>
+          <Text style={styles.greetingText}>{getGreeting()}, <Text style={styles.boldText}>{profile?.name?.split(' ')[0]}</Text></Text>
+          <Text style={styles.roleText}>{profile?.role === 'admin' ? 'Production Supervisor' : profile?.role}</Text>
+          
+          <View style={styles.syncRow}>
+            {isOffline ? <WifiOff size={12} color="#ef4444" /> : <Wifi size={12} color="#22c55e" />}
+            <Text style={styles.syncText}>
+              {isOffline ? ' Offline' : ' Connected'} • Last Sync: {lastSync ? lastSync.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
             </Text>
           </View>
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.actionCircle} onPress={handleRefresh} disabled={refreshing}>
-            {refreshing ? (
-              <ActivityIndicator size="small" color="#64748b" />
-            ) : (
-              <RefreshCw size={18} color="#64748b" />
-            )}
+          <TouchableOpacity style={styles.actionCircle} onPress={() => router.push('/settings')}>
+            <Settings size={18} color="#64748b" />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionCircle, styles.unpairCircle]} onPress={handleUnpair}>
+          <TouchableOpacity style={styles.actionCircle} onPress={handleRefresh} disabled={refreshing}>
+            {refreshing ? <ActivityIndicator size="small" color="#64748b" /> : <RefreshCw size={18} color="#64748b" />}
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionCircle, {backgroundColor: '#fef2f2'}]} onPress={handleUnpair}>
             <LogOut size={18} color="#ef4444" />
           </TouchableOpacity>
         </View>
@@ -274,250 +176,340 @@ export default function HomeScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         
-        {/* Banner Section */}
-        <View style={styles.banner}>
-          <View>
-            <Text style={styles.bannerTitle}>Workshop Controller</Text>
-            <Text style={styles.bannerSubtitle}>Real-time shop floor supervisor terminal.</Text>
+        {/* Workshop Status Card */}
+        <View style={[styles.statusCard, { backgroundColor: statusColor + '15', borderColor: statusColor + '30' }]}>
+          <View style={styles.statusHeader}>
+            {workshop_status.level === 'normal' ? <CheckCircle size={20} color={statusColor} /> : <AlertTriangle size={20} color={statusColor} />}
+            <Text style={[styles.statusTitle, { color: statusColor }]}>{workshop_status.title}</Text>
           </View>
-          <Activity size={32} color="#ffffff" style={{ opacity: 0.8 }} />
-        </View>
-
-        {/* Stats Summary Rows */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statsCard}>
-            <Text style={styles.statsVal}>{stats.clockedInCount}</Text>
-            <Text style={styles.statsLabel}>Clocked In</Text>
-          </View>
-          <View style={styles.statsCard}>
-            <Text style={styles.statsVal}>{stats.activeJobs}</Text>
-            <Text style={styles.statsLabel}>Active Jobs</Text>
-          </View>
-          <View style={styles.statsCard}>
-            <Text style={styles.statsVal}>{stats.pendingPO}</Text>
-            <Text style={styles.statsLabel}>Pending PO</Text>
+          <View style={styles.statusGrid}>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusItemValue}>{kpis.machines_running}</Text>
+              <Text style={styles.statusItemLabel}>Machines Running</Text>
+            </View>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusItemValue}>{kpis.active_jobs}</Text>
+              <Text style={styles.statusItemLabel}>Active Jobs</Text>
+            </View>
+            <View style={styles.statusItem}>
+              <Text style={styles.statusItemValue}>{kpis.workers_present}</Text>
+              <Text style={styles.statusItemLabel}>Operators Present</Text>
+            </View>
           </View>
         </View>
 
-        {/* Section title */}
-        <Text style={styles.sectionHeader}>Operational Modules</Text>
+        {/* Priority Actions (Requires Attention) */}
+        {priority_actions && priority_actions.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Requires Attention</Text>
+            {priority_actions.map((alert: any, index: number) => (
+              <TouchableOpacity key={index} style={styles.alertCard} onPress={() => router.push(alert.route)}>
+                <AlertCircle size={20} color="#ef4444" style={{marginRight: 12}} />
+                <View style={{flex: 1}}>
+                  <Text style={styles.alertTitle}>{alert.title}</Text>
+                  <Text style={styles.alertMessage}>{alert.message}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        {/* Modules Grid */}
-        <View style={styles.modulesGrid}>
-          {modules.map((mod, idx) => (
-            <TouchableOpacity 
-              key={idx} 
-              style={[
-                styles.moduleCard, 
-                isTablet ? styles.moduleCardTablet : styles.moduleCardMobile
-              ]}
-              onPress={() => {
-                if (mod.route === 'Staffs') {
-                  router.push('/staffs');
-                } else if (mod.route === 'Attendance') {
-                  router.push('/attendance');
-                } else if (mod.route === 'Jobs') {
-                  router.push('/jobs');
-                } else if (mod.route === 'PurchaseOrders') {
-                  router.push('/purchase-orders');
-                } else if (mod.route === 'Machines') {
-                  router.push('/machines');
-                } else if (mod.route === 'Challans') {
-                  router.push('/challans');
-                } else if (mod.route === 'Expenses') {
-                  router.push('/expenses');
-                } else if (mod.route === 'Inventory') {
-                  router.push('/inventory');
-                } else {
-                  Alert.alert('Module Navigation', `Loading ${mod.title} subsystem...`);
-                }
-              }}
-            >
-              <View style={[styles.iconContainer, { backgroundColor: mod.bgColor }]}>
-                {mod.icon}
+        {/* Dashboard KPI Cards (Horizontal) */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.kpiScroll}>
+          <View style={styles.kpiCard}>
+            <Users size={20} color="#3b82f6" />
+            <Text style={styles.kpiVal}>{kpis.workers_present}</Text>
+            <Text style={styles.kpiLabel}>Workers Present</Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Factory size={20} color="#10b981" />
+            <Text style={styles.kpiVal}>{kpis.machines_running}</Text>
+            <Text style={styles.kpiLabel}>Machines Running</Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Briefcase size={20} color="#8b5cf6" />
+            <Text style={styles.kpiVal}>{kpis.active_jobs}</Text>
+            <Text style={styles.kpiLabel}>Active Jobs</Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Clock size={20} color="#f59e0b" />
+            <Text style={styles.kpiVal}>{kpis.delayed_jobs}</Text>
+            <Text style={styles.kpiLabel}>Delayed Jobs</Text>
+          </View>
+        </ScrollView>
+
+        {/* Today's Production Progress */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Today's Production Progress</Text>
+          <View style={styles.progressCard}>
+            <View style={styles.progressRow}>
+              <Text style={styles.progressText}>{production_progress.completed} Jobs Completed</Text>
+              <Text style={styles.progressText}>{production_progress.percentage}%</Text>
+            </View>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${production_progress.percentage}%` }]} />
+            </View>
+            <Text style={styles.progressSubtext}>{production_progress.remaining} Jobs Remaining</Text>
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickActionsScroll}>
+            <TouchableOpacity style={styles.qaButton} onPress={() => router.push('/jobs')}>
+              <Plus size={16} color="#ffffff" />
+              <Text style={styles.qaText}>Create Job</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.qaButtonSecondary} onPress={() => router.push('/attendance')}>
+              <UserCheck size={16} color="#1e293b" />
+              <Text style={styles.qaTextSecondary}>Mark Attendance</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.qaButtonSecondary} onPress={() => router.push('/machines')}>
+              <Wrench size={16} color="#1e293b" />
+              <Text style={styles.qaTextSecondary}>Report Breakdown</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* Operational Modules */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Operational Modules</Text>
+          <View style={styles.modulesGrid}>
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/staffs')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#f1f5f9' }]}>
+                <Users size={24} color="#0f172a" />
               </View>
               <View style={styles.moduleMeta}>
-                <Text style={styles.moduleTitle}>{mod.title}</Text>
-                <Text style={styles.moduleDesc}>{mod.desc}</Text>
+                <Text style={styles.moduleTitle}>Staff Profiles</Text>
+                <Text style={styles.moduleDesc}>Directory & Badges</Text>
               </View>
             </TouchableOpacity>
-          ))}
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/attendance')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#f0fdf4' }]}>
+                <UserCheck size={24} color="#22c55e" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Attendance</Text>
+                <Text style={styles.moduleDesc}>{modules_data.attendance.present} Present • {modules_data.attendance.absent} Absent</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/jobs')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#eff6ff' }]}>
+                <Briefcase size={24} color="#2563eb" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Job Cards</Text>
+                <Text style={styles.moduleDesc}>{modules_data.jobs.active} Active • {modules_data.jobs.delayed} Delayed</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/purchase-orders')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#fefbeb' }]}>
+                <FileText size={24} color="#f59e0b" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Purchase Orders</Text>
+                <Text style={styles.moduleDesc}>{modules_data.purchase_orders.pending} Pending</Text>
+              </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/machines')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#ecfeff' }]}>
+                <Cpu size={24} color="#06b6d4" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Machine Logs</Text>
+                <Text style={styles.moduleDesc}>{kpis.machines_running} Running</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/expenses')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#fef2f2' }]}>
+                <DollarSign size={24} color="#ef4444" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Expenses</Text>
+                <Text style={styles.moduleDesc}>Log Workshop Claims</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/invoices')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#f8fafc' }]}>
+                <FileText size={24} color="#475569" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Invoices</Text>
+                <Text style={styles.moduleDesc}>{modules_data.invoices.pending} Pending Billing</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/inventory')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#eff6ff' }]}>
+                <Archive size={24} color="#3b82f6" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Inventory</Text>
+                <Text style={styles.moduleDesc}>Manage Stock</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
+        {/* Machine Overview */}
+        {machines && machines.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Machine Overview</Text>
+            <View style={styles.machineList}>
+              {machines.slice(0, 3).map((machine: any) => (
+                <TouchableOpacity key={machine.id} style={styles.machineItem} onPress={() => router.push('/machines')}>
+                  <View style={[styles.machineIndicator, { 
+                    backgroundColor: (machine.status === 'running' || machine.status === 'busy') ? '#10b981' : 
+                                     machine.status === 'breakdown' ? '#ef4444' : 
+                                     machine.status === 'maintenance' ? '#f59e0b' : '#94a3b8' 
+                  }]} />
+                  <Text style={styles.machineName}>{machine.name}</Text>
+                  <Text style={styles.machineStatus}>{machine.status}</Text>
+                </TouchableOpacity>
+              ))}
+              {machines.length > 3 && (
+                <TouchableOpacity onPress={() => router.push('/machines')}>
+                  <Text style={styles.viewAllText}>View all {machines.length} machines</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        <View style={{height: 40}} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '500',
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  centerContent: { justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 15,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderColor: '#cbd5e1',
+    borderBottomColor: '#f1f5f9',
   },
-  appTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  profileText: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  boldText: {
-    fontWeight: '600',
-    color: '#334155',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  headerLeft: { flex: 1 },
+  greetingText: { fontSize: 20, color: '#0f172a' },
+  boldText: { fontWeight: '700' },
+  roleText: { fontSize: 13, color: '#64748b', marginTop: 2 },
+  syncRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  syncText: { fontSize: 11, color: '#64748b', marginLeft: 4 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   actionCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center'
   },
-  unpairCircle: {
-    backgroundColor: '#fef2f2',
+  scrollContainer: { padding: 20 },
+  
+  // Status Card
+  statusCard: {
+    padding: 20, borderRadius: 16, borderWidth: 1,
+    marginBottom: 24,
   },
-  scrollContainer: {
-    padding: 24,
-    paddingBottom: 40,
+  statusHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  statusTitle: { fontSize: 16, fontWeight: '700', marginLeft: 8 },
+  statusGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  statusItem: { flex: 1 },
+  statusItemValue: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
+  statusItemLabel: { fontSize: 11, color: '#64748b', marginTop: 2 },
+
+  // Sections
+  section: { marginBottom: 28 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 12 },
+
+  // Alert Cards
+  alertCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fef2f2', padding: 16, borderRadius: 12,
+    borderWidth: 1, borderColor: '#fecaca', marginBottom: 8
   },
-  banner: {
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
-    padding: 24,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+  alertTitle: { fontSize: 14, fontWeight: '700', color: '#991b1b' },
+  alertMessage: { fontSize: 13, color: '#b91c1c', marginTop: 2 },
+
+  // KPI Scroll
+  kpiScroll: { paddingRight: 20, gap: 12, paddingBottom: 10 },
+  kpiCard: {
+    backgroundColor: '#ffffff', padding: 16, borderRadius: 12,
+    width: 130, borderWidth: 1, borderColor: '#f1f5f9',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02, shadowRadius: 8, elevation: 1
   },
-  bannerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#ffffff',
+  kpiVal: { fontSize: 24, fontWeight: '700', color: '#0f172a', marginTop: 12 },
+  kpiLabel: { fontSize: 12, color: '#64748b', marginTop: 4 },
+
+  // Progress Card
+  progressCard: {
+    backgroundColor: '#ffffff', padding: 16, borderRadius: 12,
+    borderWidth: 1, borderColor: '#f1f5f9'
   },
-  bannerSubtitle: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 4,
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  progressText: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  progressBarBg: { height: 8, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#2563eb', borderRadius: 4 },
+  progressSubtext: { fontSize: 12, color: '#64748b', marginTop: 10, textAlign: 'right' },
+
+  // Quick Actions
+  quickActionsScroll: { gap: 10 },
+  qaButton: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#0f172a', paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 20, gap: 6
   },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 28,
+  qaText: { color: '#ffffff', fontSize: 13, fontWeight: '600' },
+  qaButtonSecondary: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#ffffff', paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', gap: 6
   },
-  statsCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  statsVal: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#2563eb',
-  },
-  statsLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  sectionHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#475569',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 16,
-  },
-  modulesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
+  qaTextSecondary: { color: '#1e293b', fontSize: 13, fontWeight: '600' },
+
+  // Modules Grid
+  modulesGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   moduleCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
+    width: '48.5%', backgroundColor: '#ffffff', padding: 16,
+    borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#f1f5f9',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02, shadowRadius: 8, elevation: 1
   },
-  moduleCardMobile: {
-    width: '100%',
+  iconContainer: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  moduleMeta: { flex: 1 },
+  moduleTitle: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  moduleDesc: { fontSize: 11, color: '#64748b', marginTop: 4 },
+
+  // Machine Overview
+  machineList: { backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#f1f5f9', overflow: 'hidden' },
+  machineItem: {
+    flexDirection: 'row', alignItems: 'center', padding: 16,
+    borderBottomWidth: 1, borderBottomColor: '#f1f5f9'
   },
-  moduleCardTablet: {
-    width: '48.5%', // 2 columns with gaps
-  },
-  iconContainer: {
-    width: 54,
-    height: 54,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  moduleMeta: {
-    flex: 1,
-  },
-  moduleTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  moduleDesc: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 2,
-  }
+  machineIndicator: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
+  machineName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  machineStatus: { fontSize: 12, color: '#64748b', textTransform: 'capitalize' },
+  viewAllText: { padding: 16, textAlign: 'center', fontSize: 13, color: '#2563eb', fontWeight: '500' },
+
+  // Timeline
+  timelineContainer: { paddingLeft: 10 },
+  timelineEvent: { flexDirection: 'row', marginBottom: 0 },
+  timelineTimeCol: { width: 50, paddingTop: 2 },
+  timelineTime: { fontSize: 12, color: '#64748b', fontWeight: '500' },
+  timelineLine: { alignItems: 'center', paddingHorizontal: 12 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#cbd5e1', zIndex: 2 },
+  timelineConnector: { width: 2, flex: 1, backgroundColor: '#f1f5f9', marginTop: 4, marginBottom: 4 },
+  timelineContent: { flex: 1, paddingBottom: 24, paddingTop: -2 },
+  timelineTitle: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  timelineDesc: { fontSize: 13, color: '#64748b', marginTop: 2 }
 });

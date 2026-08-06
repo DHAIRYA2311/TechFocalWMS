@@ -44,7 +44,7 @@ import {
   BarChart2,
 } from 'lucide-react';
 
-const API = 'http://127.0.0.1:8000/api';
+const API = '/api';
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('auth_token')}` });
 
 export default function MachinesManagement({ user }) {

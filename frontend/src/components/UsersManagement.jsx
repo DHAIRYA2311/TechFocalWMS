@@ -19,6 +19,7 @@ import {
   UserX,
   UserCheck,
   Eye,
+  EyeOff,
   ArrowLeft,
   DollarSign,
   FileText,
@@ -26,7 +27,8 @@ import {
   Briefcase,
   Calendar,
   AlertTriangle,
-  Camera
+  Camera,
+  Wand2
 } from 'lucide-react';
 
 export default function UsersManagement() {
@@ -44,6 +46,7 @@ export default function UsersManagement() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState('worker');
   const [shift, setShift] = useState('day');
   const [status, setStatus] = useState('active');
@@ -67,19 +70,37 @@ export default function UsersManagement() {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/users', {
+      const response = await axios.get('/api/users', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUsers(response.data);
     } catch (err) {
-      console.error(err);
-      setFeedback({
-        type: 'danger',
-        message: err.response?.data?.message || 'Failed to load users from the server.'
-      });
+      setFeedback({ type: 'danger', message: 'Failed to load users.' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const generatePassword = () => {
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const symbols = '!@#$%^&*()_+~`|}{[]:;?><,./-=';
+    const allChars = uppercase + lowercase + numbers + symbols;
+    
+    let generated = '';
+    generated += uppercase[Math.floor(Math.random() * uppercase.length)];
+    generated += lowercase[Math.floor(Math.random() * lowercase.length)];
+    generated += numbers[Math.floor(Math.random() * numbers.length)];
+    generated += symbols[Math.floor(Math.random() * symbols.length)];
+    
+    for (let i = 0; i < 12; i++) {
+      generated += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+    
+    generated = generated.split('').sort(() => 0.5 - Math.random()).join('');
+    setPassword(generated);
+    setShowPassword(true);
   };
 
   useEffect(() => {
@@ -92,7 +113,7 @@ export default function UsersManagement() {
     setStats(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/users/${userId}/stats`, {
+      const response = await axios.get(`/api/users/${userId}/stats`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStats(response.data);
@@ -134,6 +155,7 @@ export default function UsersManagement() {
     setName(user.name);
     setEmail(user.email);
     setPassword(''); // leave blank unless changing
+    setShowPassword(false);
     setRole(user.role);
     setShift(user.shift || 'day');
     setStatus(user.status);
@@ -167,12 +189,12 @@ export default function UsersManagement() {
 
     try {
       if (modalMode === 'create') {
-        const response = await axios.post('http://127.0.0.1:8000/api/users', userData, {
+        const response = await axios.post('/api/users', userData, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setFeedback({ type: 'success', message: response.data.message });
       } else {
-        const response = await axios.put(`http://127.0.0.1:8000/api/users/${editingUserId}`, userData, {
+        const response = await axios.put(`/api/users/${editingUserId}`, userData, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setFeedback({ type: 'success', message: response.data.message });
@@ -210,7 +232,7 @@ export default function UsersManagement() {
     const token = localStorage.getItem('auth_token');
     try {
       setLoading(true);
-      const response = await axios.post(`http://127.0.0.1:8000/api/users/${userId}/upload-photo`, formData, {
+      const response = await axios.post(`/api/users/${userId}/upload-photo`, formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -243,7 +265,7 @@ export default function UsersManagement() {
     const newStatus = user.status === 'active' ? 'inactive' : 'active';
     
     try {
-      const response = await axios.put(`http://127.0.0.1:8000/api/users/${user.id}`, {
+      const response = await axios.put(`/api/users/${user.id}`, {
         name: user.name,
         email: user.email,
         role: user.role,
@@ -285,7 +307,7 @@ export default function UsersManagement() {
     setFeedback(null);
     const token = localStorage.getItem('auth_token');
     try {
-      await axios.put(`http://127.0.0.1:8000/api/users/${viewingUser.id}`, {
+      await axios.put(`/api/users/${viewingUser.id}`, {
         name: viewingUser.name,
         email: viewingUser.email,
         role: viewingUser.role,
@@ -424,7 +446,7 @@ export default function UsersManagement() {
                 }}>
                   {viewingUser.photo_path ? (
                     <img 
-                      src={`http://127.0.0.1:8000/${viewingUser.photo_path}`} 
+                      src={`${import.meta.env.VITE_API_URL}/${viewingUser.photo_path}`} 
                       alt={viewingUser.name} 
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                     />
@@ -788,7 +810,7 @@ export default function UsersManagement() {
                         }}>
                           {user.photo_path ? (
                             <img 
-                              src={`http://127.0.0.1:8000/${user.photo_path}`} 
+                              src={`${import.meta.env.VITE_API_URL}/${user.photo_path}`} 
                               alt={user.name} 
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                             />
@@ -982,7 +1004,7 @@ export default function UsersManagement() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: !['admin', 'partner'].includes(role) ? '1fr 1fr 1fr' : '1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label className="form-label">Role</label>
                   <CustomSelect
@@ -999,32 +1021,36 @@ export default function UsersManagement() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Default Shift</label>
-                  <CustomSelect
-                    value={shift}
-                    onChange={(val) => setShift(val)}
-                    options={[
-                      { value: 'day', label: 'Day Shift' },
-                      { value: 'night', label: 'Night Shift' }
-                    ]}
-                  />
-                </div>
+                {!['admin', 'partner'].includes(role) && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Default Shift</label>
+                      <CustomSelect
+                        value={shift}
+                        onChange={(val) => setShift(val)}
+                        options={[
+                          { value: 'day', label: 'Day Shift' },
+                          { value: 'night', label: 'Night Shift' }
+                        ]}
+                      />
+                    </div>
 
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <CustomSelect
-                    value={status}
-                    onChange={(val) => setStatus(val)}
-                    options={[
-                      { value: 'active', label: 'Active' },
-                      { value: 'inactive', label: 'Inactive' }
-                    ]}
-                  />
-                </div>
+                    <div className="form-group">
+                      <label className="form-label">Status</label>
+                      <CustomSelect
+                        value={status}
+                        onChange={(val) => setStatus(val)}
+                        options={[
+                          { value: 'active', label: 'Active' },
+                          { value: 'inactive', label: 'Inactive' }
+                        ]}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: !['admin', 'partner'].includes(role) ? '1fr 1fr' : '1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label className="form-label"><Phone size={13} /> Phone (Optional)</label>
                   <input 
@@ -1037,33 +1063,62 @@ export default function UsersManagement() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label"><DollarSign size={13} /> Salary (Optional)</label>
-                  <input 
-                    type="number" 
-                    className="form-input" 
-                    placeholder="e.g. 25000"
-                    value={salary}
-                    onChange={(e) => setSalary(e.target.value)}
-                    style={{ paddingLeft: '12px', height: '38px', fontSize: '13px' }}
-                  />
-                </div>
+                {!['admin', 'partner'].includes(role) && (
+                  <div className="form-group">
+                    <label className="form-label"><DollarSign size={13} /> Salary (Optional)</label>
+                    <input 
+                      type="number" 
+                      className="form-input" 
+                      placeholder="e.g. 25000"
+                      value={salary}
+                      onChange={(e) => setSalary(e.target.value)}
+                      style={{ paddingLeft: '12px', height: '38px', fontSize: '13px' }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
-                <label className="form-label">
-                  <Lock size={13} /> Password 
-                  {modalMode === 'edit' && <span style={{ fontWeight: 'normal', color: 'var(--color-text-muted)', fontSize: '11px', marginLeft: '4px' }}>(Leave blank to keep current)</span>}
-                </label>
-                <input 
-                  type="password" 
-                  className="form-input" 
-                  placeholder={modalMode === 'create' ? "Enter account password" : "Enter new password if changing"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={{ paddingLeft: '12px', height: '38px', fontSize: '13px' }}
-                  required={modalMode === 'create'}
-                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>
+                    <Lock size={13} /> Password 
+                    {modalMode === 'edit' && <span style={{ fontWeight: 'normal', color: 'var(--color-text-muted)', fontSize: '11px', marginLeft: '4px' }}>(Leave blank to keep current)</span>}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generatePassword}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '4px 8px',
+                      backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', color: '#0f172a',
+                      cursor: 'pointer', transition: 'all 0.2s', marginBottom: '8px'
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#e2e8f0'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+                  >
+                    <Wand2 size={12} /> Generate
+                  </button>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    className="form-input" 
+                    placeholder={modalMode === 'create' ? "Enter account password" : "Enter new password if changing"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    style={{ paddingLeft: '12px', paddingRight: '40px', height: '38px', fontSize: '13px' }}
+                    required={modalMode === 'create'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex', alignItems: 'center' }}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <p style={{ fontSize: '11px', color: 'var(--color-text-light)', marginTop: '4px' }}>
+                  Policy: Minimum 12 characters, including uppercase, lowercase, numbers, and symbols. Previous passwords cannot be reused.
+                </p>
               </div>
 
               <div className="form-group">

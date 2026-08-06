@@ -10,7 +10,10 @@ export default function DocumentSettings() {
     prefix_challan: 'DC-',
     prefix_invoice: 'INV-',
     prefix_job: 'JOB-',
-    auto_numbering: '1'
+    auto_numbering: '1',
+    enable_watermark: '1',
+    enable_qr_verification: '1',
+    global_watermark_text: ''
   });
 
   const [saving, setSaving] = useState(false);
@@ -23,7 +26,10 @@ export default function DocumentSettings() {
         prefix_challan: settings.prefix_challan || 'DC-',
         prefix_invoice: settings.prefix_invoice || 'INV-',
         prefix_job: settings.prefix_job || 'JOB-',
-        auto_numbering: settings.auto_numbering !== undefined ? settings.auto_numbering : '1'
+        auto_numbering: settings.auto_numbering !== undefined ? settings.auto_numbering : '1',
+        enable_watermark: settings.enable_watermark !== undefined ? settings.enable_watermark : '1',
+        enable_qr_verification: settings.enable_qr_verification !== undefined ? settings.enable_qr_verification : '1',
+        global_watermark_text: settings.global_watermark_text || ''
       });
     }
   }, [settings]);
@@ -139,6 +145,53 @@ export default function DocumentSettings() {
               options={[
                 { value: '1', label: 'Enabled (Auto)' },
                 { value: '0', label: 'Disabled (Manual)' }
+              ]}
+              style={{ width: '150px' }}
+            />
+          </div>
+
+          <div className="form-group" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
+            <div>
+              <label className="form-label" style={{ marginBottom: '2px' }}>Document Watermarking</label>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Apply dynamic security watermarks on all generated PDFs.</span>
+            </div>
+            <CustomSelect
+              value={formData.enable_watermark}
+              onChange={val => setFormData({ ...formData, enable_watermark: val })}
+              options={[
+                { value: '1', label: 'Enabled' },
+                { value: '0', label: 'Disabled' }
+              ]}
+              style={{ width: '150px' }}
+            />
+          </div>
+
+          {formData.enable_watermark === '1' && (
+             <div className="form-group">
+               <label className="form-label">Global Watermark Text (Optional)</label>
+               <input 
+                 type="text"
+                 className="form-input"
+                 value={formData.global_watermark_text}
+                 onChange={e => setFormData({ ...formData, global_watermark_text: e.target.value })}
+                 style={{ paddingLeft: '12px' }}
+                 placeholder="Leave blank for dynamic text"
+               />
+               <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>If set, overrides the dynamic watermark text.</span>
+             </div>
+          )}
+
+          <div className="form-group" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '20px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
+            <div>
+              <label className="form-label" style={{ marginBottom: '2px' }}>QR Code Verification</label>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Embed scan-to-verify QR codes on PDFs.</span>
+            </div>
+            <CustomSelect
+              value={formData.enable_qr_verification}
+              onChange={val => setFormData({ ...formData, enable_qr_verification: val })}
+              options={[
+                { value: '1', label: 'Enabled' },
+                { value: '0', label: 'Disabled' }
               ]}
               style={{ width: '150px' }}
             />

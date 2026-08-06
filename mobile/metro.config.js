@@ -1,7 +1,9 @@
-const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
+const {
+  getSentryExpoConfig
+} = require("@sentry/react-native/metro");
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 // Shim Node.js core modules util and assert to prevent bundling failures on Android/iOS
 config.resolver.extraNodeModules = {

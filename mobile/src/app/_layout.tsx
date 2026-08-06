@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useColorScheme, View, ActivityIndicator, Platform } from 'react-native';
+import { useColorScheme, View, ActivityIndicator, Platform, AppState, AppStateStatus, Alert } from 'react-native';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import * as Notifications from 'expo-notifications';
@@ -10,6 +10,45 @@ import PairingScreen from '@/components/PairingScreen';
 import LaunchScreen from '@/components/LaunchScreen';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import TechFocalLoader from '@/components/tech-focal-loader';
+import { processQueue } from '@/utils/syncQueue';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)      
+  // spotlight: __DEV__,
+});
+
+// Global interceptor to sanitize 500-level errors in mobile app
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status >= 500) {
+      const safeError = new Error('An unexpected server error occurred. Our team has been notified.');
+      (safeError as any).response = { 
+        ...error.response, 
+        data: { message: safeError.message } 
+      };
+      Sentry.captureException(error);
+      Alert.alert('System Error', safeError.message);
+      return Promise.reject(safeError);
+    }
+    return Promise.reject(error);
+  }
+);
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -73,7 +112,26 @@ async function registerForPushNotificationsAsync() {
 function LayoutContent() {
   const { isPaired, loading, token, apiUrl } = useAuth();
   const [checksCompleted, setChecksCompleted] = useState(false);
-  const [targetSuccess, setTargetSuccess] = useState(false);
+
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        processQueue(); // Queue processes itself and will quietly fail if still offline
+      }
+    };
+    
+    // Also poll every 15 seconds just in case network comes back while app is open
+    const interval = setInterval(() => {
+        processQueue();
+    }, 15000);
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isPaired || !token || !apiUrl) return;
@@ -96,32 +154,12 @@ function LayoutContent() {
       }
     }
 
-    async function scheduleDailyReminder() {
-      try {
-        // Clear previous schedules to prevent duplicate alerts
-        await Notifications.cancelAllScheduledNotificationsAsync();
-        
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "TechFocal WMS Daily Check-in 📋",
-            body: "It's 10:00 PM. Please review open Job Cards and submit any pending updates.",
-            sound: 'default',
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DAILY,
-            hour: 22,
-            minute: 0,
-            channelId: 'default',
-          },
-        });
-        console.log('Daily 10:00 PM notification scheduled successfully.');
-      } catch (err) {
-        console.warn('Failed to schedule daily notification:', err);
-      }
-    }
+    // Clear any previously scheduled daily reminders so they stop firing
+    Notifications.cancelAllScheduledNotificationsAsync().catch(err => {
+      console.warn('Failed to cancel previous scheduled notifications:', err);
+    });
 
     setupPushNotifications();
-    scheduleDailyReminder();
 
     const notificationListener = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification received in foreground:', notification);
@@ -139,7 +177,9 @@ function LayoutContent() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0b0f19' }} />
+      <View style={{ flex: 1, backgroundColor: '#0b0f19', justifyContent: 'center', alignItems: 'center' }}>
+        <TechFocalLoader color="#3b82f6" size={32} />
+      </View>
     );
   }
 
@@ -147,21 +187,19 @@ function LayoutContent() {
     return (
       <LaunchScreen 
         onComplete={(success) => {
-          setTargetSuccess(success);
           setChecksCompleted(true);
         }} 
       />
     );
   }
-
-  if (!targetSuccess) {
+  if (!isPaired) {
     return <PairingScreen />;
   }
 
   return <AppTabs />;
 }
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     <AuthProvider>
@@ -171,4 +209,4 @@ export default function RootLayout() {
       </ThemeProvider>
     </AuthProvider>
   );
-}
+});

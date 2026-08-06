@@ -84,13 +84,13 @@ class PayrollController extends Controller
      */
     public function calculate(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'month' => 'required|integer|between:1,12',
             'year' => 'required|integer|min:2020|max:2050',
         ]);
 
-        $month = $request->month;
-        $year = $request->year;
+        $month = $validated['month'];
+        $year = $validated['year'];
 
         // Check if payroll already exists for this period
         $exists = Payroll::where('month', $month)->where('year', $year)->first();
@@ -210,30 +210,30 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'month' => 'required|integer|between:1,12',
             'year' => 'required|integer|min:2020|max:2050',
-            'items' => 'required|array',
-            'items.*.user_id' => 'required|exists:users,id',
-            'items.*.base_salary' => 'required|numeric|min:0',
-            'items.*.days_present' => 'required|integer|min:0',
-            'items.*.days_absent' => 'required|integer|min:0',
-            'items.*.days_half_day' => 'required|integer|min:0',
-            'items.*.days_leave' => 'required|integer|min:0',
-            'items.*.gross_salary' => 'required|numeric|min:0',
-            'items.*.attendance_deductions' => 'required|numeric|min:0',
-            'items.*.overtime_hours' => 'required|numeric|min:0',
-            'items.*.overtime_pay' => 'required|numeric|min:0',
-            'items.*.pf_deductions' => 'required|numeric|min:0',
-            'items.*.pt_deductions' => 'required|numeric|min:0',
-            'items.*.advance_deductions' => 'required|numeric|min:0',
-            'items.*.bonus' => 'required|numeric|min:0',
-            'items.*.net_salary' => 'required|numeric|min:0',
-            'items.*.notes' => 'nullable|string',
+            'items' => 'required|array|max:200',
+            'items.*.user_id' => 'required|integer|exists:users,id',
+            'items.*.base_salary' => 'required|numeric|min:0|max:99999999',
+            'items.*.days_present' => 'required|integer|min:0|max:31',
+            'items.*.days_absent' => 'required|integer|min:0|max:31',
+            'items.*.days_half_day' => 'required|integer|min:0|max:31',
+            'items.*.days_leave' => 'required|integer|min:0|max:31',
+            'items.*.gross_salary' => 'required|numeric|min:0|max:99999999',
+            'items.*.attendance_deductions' => 'required|numeric|min:0|max:99999999',
+            'items.*.overtime_hours' => 'required|numeric|min:0|max:300',
+            'items.*.overtime_pay' => 'required|numeric|min:0|max:99999999',
+            'items.*.pf_deductions' => 'required|numeric|min:0|max:99999999',
+            'items.*.pt_deductions' => 'required|numeric|min:0|max:99999999',
+            'items.*.advance_deductions' => 'required|numeric|min:0|max:99999999',
+            'items.*.bonus' => 'required|numeric|min:0|max:99999999',
+            'items.*.net_salary' => 'required|numeric|min:0|max:99999999',
+            'items.*.notes' => 'nullable|string|max:1000',
         ]);
 
-        $month = $request->month;
-        $year = $request->year;
+        $month = $validated['month'];
+        $year = $validated['year'];
 
         // Check again to prevent double submit
         $exists = Payroll::where('month', $month)->where('year', $year)->first();
@@ -253,7 +253,7 @@ class PayrollController extends Controller
             ]);
 
             // 2. Create items
-            foreach ($request->items as $item) {
+            foreach ($validated['items'] as $item) {
                 $userId = $item['user_id'];
                 
                 $payrollItem = PayrollItem::create([
@@ -401,25 +401,25 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
+        $validated = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
             'amount' => 'required|numeric|min:100|max:100000',
             'date' => 'required|date',
-            'notes' => 'nullable|string',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         // Check if selected user is eligible (non-admin, non-partner)
-        $user = User::findOrFail($request->user_id);
+        $user = User::findOrFail($validated['user_id']);
         if (in_array($user->role, ['admin', 'partner'])) {
             return response()->json(['message' => 'Salary advances cannot be granted to Admins or Partners.'], 422);
         }
 
         $advance = SalaryAdvance::create([
-            'user_id' => $request->user_id,
-            'amount' => $request->amount,
-            'date' => $request->date,
+            'user_id' => $validated['user_id'],
+            'amount' => $validated['amount'],
+            'date' => $validated['date'],
             'status' => 'pending',
-            'notes' => $request->notes,
+            'notes' => $validated['notes'] ?? null,
         ]);
 
         return response()->json([

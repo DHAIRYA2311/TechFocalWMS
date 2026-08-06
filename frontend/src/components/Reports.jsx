@@ -46,7 +46,7 @@ export default function Reports() {
         params.end_date = customEnd;
       }
 
-      const response = await axios.get('http://127.0.0.1:8000/api/reports/analytics', {
+      const response = await axios.get('/api/reports/analytics', {
         headers: { Authorization: `Bearer ${token}` },
         params
       });

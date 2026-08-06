@@ -20,9 +20,15 @@ class ReportController extends Controller
 {
     public function getAnalytics(Request $request)
     {
-        $filter = $request->query('filter', 'this_month');
-        $startDateParam = $request->query('start_date');
-        $endDateParam = $request->query('end_date');
+        $validated = $request->validate([
+            'filter' => 'nullable|string|in:today,this_week,this_month,this_quarter,this_year,custom',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date'
+        ]);
+
+        $filter = $validated['filter'] ?? 'this_month';
+        $startDateParam = $validated['start_date'] ?? null;
+        $endDateParam = $validated['end_date'] ?? null;
 
         // Determine current date range boundaries
         [$start, $end] = $this->getDateRange($filter, $startDateParam, $endDateParam);

@@ -82,12 +82,12 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'Unauthorized. Only partners, administrators, or managers can log expenses.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'expense_date' => 'required|date',
             'category' => 'required|string|max:255',
-            'amount' => 'required|numeric|min:0.01',
+            'amount' => 'required|numeric|min:0.01|max:99999999',
             'payment_mode' => 'required|string|in:cash,upi_bank,cheque,card',
-            'description' => 'nullable|string',
+            'description' => 'nullable|string|max:2000',
             'reference_number' => 'nullable|string|max:255',
             'receipt' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5120',
         ]);
@@ -107,12 +107,12 @@ class ExpenseController extends Controller
         }
 
         $expense = Expense::create([
-            'expense_date' => $request->expense_date,
-            'category' => $request->category,
-            'amount' => $request->amount,
-            'payment_mode' => $request->payment_mode,
-            'description' => $request->description,
-            'reference_number' => $request->reference_number,
+            'expense_date' => $validated['expense_date'],
+            'category' => $validated['category'],
+            'amount' => $validated['amount'],
+            'payment_mode' => $validated['payment_mode'],
+            'description' => $validated['description'] ?? null,
+            'reference_number' => $validated['reference_number'] ?? null,
             'receipt_path' => $receiptPath,
             'logged_by' => $request->user()->id,
         ]);
@@ -137,12 +137,12 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'Expense record not found.'], 404);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'expense_date' => 'required|date',
             'category' => 'required|string|max:255',
-            'amount' => 'required|numeric|min:0.01',
+            'amount' => 'required|numeric|min:0.01|max:99999999',
             'payment_mode' => 'required|string|in:cash,upi_bank,cheque,card',
-            'description' => 'nullable|string',
+            'description' => 'nullable|string|max:2000',
             'reference_number' => 'nullable|string|max:255',
             'receipt' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:5120',
         ]);
@@ -165,12 +165,12 @@ class ExpenseController extends Controller
             $expense->receipt_path = 'receipts/' . $filename;
         }
 
-        $expense->expense_date = $request->expense_date;
-        $expense->category = $request->category;
-        $expense->amount = $request->amount;
-        $expense->payment_mode = $request->payment_mode;
-        $expense->description = $request->description;
-        $expense->reference_number = $request->reference_number;
+        $expense->expense_date = $validated['expense_date'];
+        $expense->category = $validated['category'];
+        $expense->amount = $validated['amount'];
+        $expense->payment_mode = $validated['payment_mode'];
+        $expense->description = $validated['description'] ?? null;
+        $expense->reference_number = $validated['reference_number'] ?? null;
         $expense->save();
 
         return response()->json([
@@ -185,7 +185,7 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'Unauthorized. Only partners, administrators, or managers can void expenses.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'delete_reason' => 'required|string|max:1000'
         ]);
 
@@ -193,7 +193,7 @@ class ExpenseController extends Controller
 
         $expense->update([
             'deleted_by' => $request->user()->id,
-            'delete_reason' => $request->delete_reason
+            'delete_reason' => $validated['delete_reason']
         ]);
 
         $expense->delete(); // Laravel soft delete

@@ -66,7 +66,7 @@ export default function StaffsManagement({ user }) {
     setError(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/users', {
+      const response = await axios.get('/api/users', {
         headers: { Authorization: `Bearer ${token}` }
       });
       // We list all users, but filter out admin/partner if we want pure shop staff.
@@ -114,7 +114,7 @@ export default function StaffsManagement({ user }) {
     setProgressStats(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/users/${staffId}/stats`, {
+      const response = await axios.get(`/api/users/${staffId}/stats`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setProgressStats(response.data);
@@ -130,7 +130,7 @@ export default function StaffsManagement({ user }) {
     setAttendanceLogs([]);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/users/${staffId}/attendance`, {
+      const response = await axios.get(`/api/users/${staffId}/attendance`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { month, year }
       });
@@ -152,7 +152,7 @@ export default function StaffsManagement({ user }) {
     setSalaryInfo(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/users/${staffId}/salary-history`, {
+      const response = await axios.get(`/api/users/${staffId}/salary-history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSalaryInfo(response.data);
@@ -235,7 +235,7 @@ export default function StaffsManagement({ user }) {
     const token = localStorage.getItem('auth_token');
     try {
       setLoading(true);
-      const response = await axios.post(`http://127.0.0.1:8000/api/users/${staffId}/upload-photo`, formData, {
+      const response = await axios.post(`/api/users/${staffId}/upload-photo`, formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -465,7 +465,7 @@ export default function StaffsManagement({ user }) {
         }}>
           {staff.photo_path ? (
             <img 
-              src={`http://127.0.0.1:8000/${staff.photo_path}`}
+              src={`${import.meta.env.VITE_API_URL}/${staff.photo_path}`}
               alt={staff.name}
               style={{
                 width: '90px',
@@ -881,7 +881,7 @@ export default function StaffsManagement({ user }) {
                       }}>
                         {staff.photo_path ? (
                           <img 
-                            src={`http://127.0.0.1:8000/${staff.photo_path}`} 
+                            src={`${import.meta.env.VITE_API_URL}/${staff.photo_path}`} 
                             alt={staff.name} 
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                           />
@@ -980,7 +980,7 @@ export default function StaffsManagement({ user }) {
               }}>
                 {selectedStaff.photo_path ? (
                   <img 
-                    src={`http://127.0.0.1:8000/${selectedStaff.photo_path}`} 
+                    src={`${import.meta.env.VITE_API_URL}/${selectedStaff.photo_path}`} 
                     alt={selectedStaff.name} 
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                   />

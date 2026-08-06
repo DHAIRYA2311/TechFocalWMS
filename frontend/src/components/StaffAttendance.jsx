@@ -57,7 +57,7 @@ export default function StaffAttendance({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/attendance', {
+      const response = await axios.get('/api/attendance', {
         headers: { Authorization: `Bearer ${token}` },
         params: { 
           date: selectedDate,
@@ -102,7 +102,7 @@ export default function StaffAttendance({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/attendance', {
+      const response = await axios.get('/api/attendance', {
         headers: { Authorization: `Bearer ${token}` },
         params: { 
           month: matrixMonth,
@@ -147,7 +147,7 @@ export default function StaffAttendance({ user }) {
         }))
       };
 
-      await axios.post('http://127.0.0.1:8000/api/attendance', payload, {
+      await axios.post('/api/attendance', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -184,7 +184,7 @@ export default function StaffAttendance({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post('http://127.0.0.1:8000/api/attendance/clock-in', {}, {
+      const response = await axios.post('/api/attendance/clock-in', {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTodayLog(response.data.attendance);
@@ -203,7 +203,7 @@ export default function StaffAttendance({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post('http://127.0.0.1:8000/api/attendance/clock-out', {}, {
+      const response = await axios.post('/api/attendance/clock-out', {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTodayLog(response.data.attendance);

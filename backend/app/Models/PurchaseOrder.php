@@ -4,16 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\LogsActivity;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Traits\BroadcastsUpdates;
 
 class PurchaseOrder extends Model
 {
     use HasFactory, SoftDeletes, BroadcastsUpdates;
+    use LogsActivity;
 
     protected $fillable = [
         'po_number',
         'po_date',
+        'customer_id',
         'customer_name',
         'customer_address',
         'customer_gstin',
@@ -28,6 +31,14 @@ class PurchaseOrder extends Model
         'deleted_by',
         'delete_reason',
     ];
+
+    /**
+     * Relationship to Customer.
+     */
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
+    }
 
     /**
      * Relationship to PO items.
@@ -51,5 +62,21 @@ class PurchaseOrder extends Model
     public function auditLogs()
     {
         return $this->hasMany(PurchaseOrderAuditLog::class);
+    }
+
+    /**
+     * Relationship to Invoices (Many-to-Many).
+     */
+    public function invoices()
+    {
+        return $this->belongsToMany(Invoice::class, 'purchase_order_invoice');
+    }
+
+    /**
+     * Relationship to Delivery Challans (Many-to-Many).
+     */
+    public function deliveryChallans()
+    {
+        return $this->belongsToMany(DeliveryChallan::class, 'purchase_order_delivery_challan');
     }
 }

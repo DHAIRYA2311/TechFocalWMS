@@ -32,27 +32,27 @@ class SettingsController extends Controller
      */
     public function saveEmailSettings(Request $request)
     {
-        $request->validate([
-            'imap_host' => 'required|string',
-            'imap_port' => 'required|string',
+        $validated = $request->validate([
+            'imap_host' => 'required|string|max:255',
+            'imap_port' => 'required|string|max:10',
             'imap_encryption' => 'required|string|in:ssl,tls,none',
-            'imap_username' => 'required|string',
-            'imap_source_folder' => 'required|string',
-            'imap_processed_folder' => 'required|string',
-            'imap_subject_filter' => 'nullable|string',
-            'imap_password' => 'nullable|string',
+            'imap_username' => 'required|string|max:255',
+            'imap_source_folder' => 'required|string|max:255',
+            'imap_processed_folder' => 'required|string|max:255',
+            'imap_subject_filter' => 'nullable|string|max:255',
+            'imap_password' => 'nullable|string|max:255',
         ]);
 
-        Setting::setVal('imap_host', $request->imap_host);
-        Setting::setVal('imap_port', $request->imap_port);
-        Setting::setVal('imap_encryption', $request->imap_encryption);
-        Setting::setVal('imap_username', $request->imap_username);
-        Setting::setVal('imap_source_folder', $request->imap_source_folder);
-        Setting::setVal('imap_processed_folder', $request->imap_processed_folder);
-        Setting::setVal('imap_subject_filter', $request->imap_subject_filter);
+        Setting::setVal('imap_host', $validated['imap_host']);
+        Setting::setVal('imap_port', $validated['imap_port']);
+        Setting::setVal('imap_encryption', $validated['imap_encryption']);
+        Setting::setVal('imap_username', $validated['imap_username']);
+        Setting::setVal('imap_source_folder', $validated['imap_source_folder']);
+        Setting::setVal('imap_processed_folder', $validated['imap_processed_folder']);
+        Setting::setVal('imap_subject_filter', $validated['imap_subject_filter'] ?? null);
 
-        if ($request->has('imap_password') && !empty($request->imap_password)) {
-            Setting::setVal('imap_password', $request->imap_password);
+        if (!empty($validated['imap_password'])) {
+            Setting::setVal('imap_password', $validated['imap_password']);
         }
 
         return response()->json([
@@ -65,13 +65,13 @@ class SettingsController extends Controller
      */
     public function testConnection(Request $request)
     {
-        $request->validate([
-            'imap_host' => 'required|string',
-            'imap_port' => 'required|string',
+        $validated = $request->validate([
+            'imap_host' => 'required|string|max:255',
+            'imap_port' => 'required|string|max:10',
             'imap_encryption' => 'required|string|in:ssl,tls,none',
-            'imap_username' => 'required|string',
-            'imap_source_folder' => 'required|string',
-            'imap_password' => 'nullable|string',
+            'imap_username' => 'required|string|max:255',
+            'imap_source_folder' => 'required|string|max:255',
+            'imap_password' => 'nullable|string|max:255',
         ]);
 
         // Backup existing settings
@@ -83,15 +83,15 @@ class SettingsController extends Controller
         $backupPassword = Setting::getVal('imap_password');
 
         // Apply temporary test settings
-        Setting::setVal('imap_host', $request->imap_host);
-        Setting::setVal('imap_port', $request->imap_port);
-        Setting::setVal('imap_encryption', $request->imap_encryption);
-        Setting::setVal('imap_username', $request->imap_username);
-        Setting::setVal('imap_source_folder', $request->imap_source_folder);
+        Setting::setVal('imap_host', $validated['imap_host']);
+        Setting::setVal('imap_port', $validated['imap_port']);
+        Setting::setVal('imap_encryption', $validated['imap_encryption']);
+        Setting::setVal('imap_username', $validated['imap_username']);
+        Setting::setVal('imap_source_folder', $validated['imap_source_folder']);
         
         // Use new password if provided, otherwise use backed up password
-        if ($request->has('imap_password') && !empty($request->imap_password)) {
-            Setting::setVal('imap_password', $request->imap_password);
+        if (!empty($validated['imap_password'])) {
+            Setting::setVal('imap_password', $validated['imap_password']);
         } else {
             Setting::setVal('imap_password', $backupPassword);
         }
@@ -160,13 +160,13 @@ class SettingsController extends Controller
      */
     public function savePermissions(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'role_permissions' => 'required|array',
             'user_permissions' => 'required|array',
         ]);
 
-        Setting::setVal('role_permissions', json_encode($request->role_permissions));
-        Setting::setVal('user_permissions', json_encode($request->user_permissions));
+        Setting::setVal('role_permissions', json_encode($validated['role_permissions']));
+        Setting::setVal('user_permissions', json_encode($validated['user_permissions']));
 
         return response()->json([
             'message' => 'Permissions updated successfully.'
@@ -178,8 +178,11 @@ class SettingsController extends Controller
      */
     public function saveSettings(Request $request)
     {
-        $data = $request->all();
-        foreach ($data as $key => $value) {
+        $validated = $request->validate([
+            '*' => 'nullable|string'
+        ]);
+
+        foreach ($validated as $key => $value) {
             Setting::setVal($key, $value);
         }
         return response()->json([

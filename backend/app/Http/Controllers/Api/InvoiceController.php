@@ -9,8 +9,10 @@ use App\Models\DeliveryChallan;
 use App\Models\DeliveryChallanItem;
 use App\Models\JobCard;
 use App\Models\PoItem;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Exception;
 
 class InvoiceController extends Controller
@@ -20,7 +22,11 @@ class InvoiceController extends Controller
      */
     public function index()
     {
-        $invoices = Invoice::with(['purchaseOrder', 'deliveryChallan'])
+        $invoices = Invoice::with([
+                'purchaseOrder:id,po_number,customer_name', 
+                'purchaseOrders:id,po_number,customer_name', 
+                'deliveryChallan:id,challan_number'
+            ])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -32,7 +38,7 @@ class InvoiceController extends Controller
      */
     public function show($id)
     {
-        $invoice = Invoice::with(['purchaseOrder', 'deliveryChallan', 'items.poItem.purchaseOrder', 'items.jobCard'])
+        $invoice = Invoice::with(['purchaseOrder', 'purchaseOrders', 'deliveryChallan', 'items.poItem.purchaseOrder', 'items.jobCard'])
             ->findOrFail($id);
 
         return response()->json($invoice);
@@ -47,21 +53,43 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Unauthorized. Only accounts with Finance permission can generate invoices.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'invoice_date' => 'required|date',
-            'purchase_order_id' => 'required|exists:purchase_orders,id',
-            'delivery_challan_id' => 'nullable|exists:delivery_challans,id',
-            'job_card_ids' => 'nullable|array',
-            'job_card_ids.*' => 'exists:job_cards,id',
-            'remarks' => 'nullable|string',
-            'eway_bill_no' => 'nullable|string',
+            'purchase_order_id' => 'required_without:purchase_order_ids|nullable|integer|exists:purchase_orders,id',
+            'purchase_order_ids' => 'required_without:purchase_order_id|nullable|array|max:100',
+            'purchase_order_ids.*' => 'integer|exists:purchase_orders,id',
+            'delivery_challan_id' => 'nullable|integer|exists:delivery_challans,id',
+            'job_card_ids' => 'nullable|array|max:100',
+            'job_card_ids.*' => 'integer|exists:job_cards,id',
+            'remarks' => 'nullable|string|max:2000',
+            'eway_bill_no' => 'nullable|string|max:100',
             'status' => 'nullable|string|in:draft,unpaid',
         ]);
 
         try {
-            return DB::transaction(function () use ($request) {
+            $poIds = $validated['purchase_order_ids'] ?? null;
+            if (empty($poIds) && isset($validated['purchase_order_id'])) {
+                $poIds = [$validated['purchase_order_id']];
+            }
+            $poIds = array_filter(array_unique(array_map('intval', (array)$poIds)));
+
+            if (empty($poIds)) {
+                return response()->json(['message' => 'Please select at least one Purchase Order.'], 422);
+            }
+
+            $pos = PurchaseOrder::whereIn('id', $poIds)->get();
+            if ($pos->count() !== count($poIds)) {
+                return response()->json(['message' => 'One or more selected Purchase Orders do not exist.'], 422);
+            }
+
+            $customerNames = $pos->pluck('customer_name')->unique();
+            if ($customerNames->count() > 1) {
+                return response()->json(['message' => 'All selected Purchase Orders must belong to the same customer.'], 422);
+            }
+
+            return DB::transaction(function () use ($validated, $poIds) {
                 // 1. Generate sequential invoice number (INV-YYYY-XXXX)
-                $year = date('Y', strtotime($request->invoice_date));
+                $year = date('Y', strtotime($validated['invoice_date']));
                 $settingPrefix = \App\Models\Setting::getVal('prefix_invoice', 'INV-');
                 $prefix = "{$settingPrefix}{$year}-";
 
@@ -81,13 +109,13 @@ class InvoiceController extends Controller
                 // 2. Identify items to bill
                 $itemsToBill = [];
                 $dc = null;
-                if ($request->delivery_challan_id) {
-                    $dc = DeliveryChallan::findOrFail($request->delivery_challan_id);
+                if (isset($validated['delivery_challan_id'])) {
+                    $dc = DeliveryChallan::findOrFail($validated['delivery_challan_id']);
                     if ($dc->invoice_id) {
                         throw new Exception("Delivery Challan {$dc->challan_number} is already linked to an Invoice.");
                     }
-                    if ((int)$dc->purchase_order_id !== (int)$request->purchase_order_id) {
-                        throw new Exception("Selected Purchase Order does not match the Delivery Challan.");
+                    if (!in_array((int)$dc->purchase_order_id, $poIds)) {
+                        throw new Exception("Selected Purchase Orders do not match the Delivery Challan.");
                     }
 
                     $dcItems = DeliveryChallanItem::where('delivery_challan_id', $dc->id)->get();
@@ -98,8 +126,8 @@ class InvoiceController extends Controller
                             'quantity' => $dcItem->quantity_delivered,
                         ];
                     }
-                } elseif ($request->job_card_ids && count($request->job_card_ids) > 0) {
-                    foreach ($request->job_card_ids as $jobCardId) {
+                } elseif (isset($validated['job_card_ids']) && count($validated['job_card_ids']) > 0) {
+                    foreach ($validated['job_card_ids'] as $jobCardId) {
                         $job = JobCard::findOrFail($jobCardId);
                         if ($job->status !== 'completed') {
                             throw new Exception("Job Card {$job->job_card_number} is not completed and cannot be invoiced.");
@@ -138,8 +166,8 @@ class InvoiceController extends Controller
                     $poItem = PoItem::findOrFail($billItem['po_item_id']);
                     
                     // Verify PO match
-                    if ($poItem->purchase_order_id !== (int)$request->purchase_order_id) {
-                        throw new Exception("Items must belong to the selected Purchase Order.");
+                    if (!in_array((int)$poItem->purchase_order_id, $poIds)) {
+                        throw new Exception("Items must belong to the selected Purchase Orders.");
                     }
 
                     $qty = $billItem['quantity'];
@@ -175,18 +203,21 @@ class InvoiceController extends Controller
 
                 $invoice = Invoice::create([
                     'invoice_number' => $invoiceNumber,
-                    'invoice_date' => $request->invoice_date,
-                    'purchase_order_id' => $request->purchase_order_id,
-                    'delivery_challan_id' => $request->delivery_challan_id,
+                    'invoice_date' => $validated['invoice_date'],
+                    'purchase_order_id' => $poIds[0],
+                    'delivery_challan_id' => $validated['delivery_challan_id'] ?? null,
                     'subtotal' => $subtotal,
                     'cgst_total' => $cgstTotal,
                     'sgst_total' => $sgstTotal,
                     'igst_total' => $igstTotal,
                     'grand_total' => $grandTotal,
-                    'remarks' => $request->remarks,
-                    'eway_bill_no' => $request->eway_bill_no,
-                    'status' => $request->status ?? 'unpaid',
+                    'remarks' => $validated['remarks'] ?? null,
+                    'eway_bill_no' => $validated['eway_bill_no'] ?? null,
+                    'status' => $validated['status'] ?? 'unpaid',
                 ]);
+
+                // Sync pivot relation
+                $invoice->purchaseOrders()->sync($poIds);
 
                 // 5. Save Invoice Items
                 foreach ($invoiceItemsData as $itemData) {
@@ -194,16 +225,24 @@ class InvoiceController extends Controller
                     InvoiceItem::create($itemData);
                 }
 
-                // 6. Update Delivery Challan's invoice link if it was provided
+                // Link Delivery Challan if set
                 if ($dc) {
                     $dc->update([
                         'invoice_id' => $invoice->id
                     ]);
                 }
 
+                PushNotificationService::sendToRoles(
+                    ['admin', 'partner'],
+                    'Invoice Generated 📄',
+                    "Invoice {$invoice->invoice_number} has been generated.",
+                    'invoice_generated',
+                    ['invoice_id' => $invoice->id]
+                );
+
                 return response()->json([
                     'message' => 'Invoice generated successfully.',
-                    'invoice' => $invoice->load(['purchaseOrder', 'deliveryChallan', 'items.poItem'])
+                    'invoice' => $invoice->load(['purchaseOrder', 'purchaseOrders', 'deliveryChallan', 'items.poItem'])
                 ], 201);
             });
         } catch (Exception $e) {
@@ -222,17 +261,17 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Unauthorized. Only accounts with Finance permission can cancel invoices.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'cancellation_reason' => 'required|string|max:1000'
         ]);
 
         $invoice = Invoice::findOrFail($id);
 
-        DB::transaction(function () use ($invoice, $request) {
+        DB::transaction(function () use ($invoice, $request, $validated) {
             $invoice->update([
                 'cancelled_at' => now(),
                 'cancelled_by' => $request->user()->id,
-                'cancellation_reason' => $request->cancellation_reason
+                'cancellation_reason' => $validated['cancellation_reason']
             ]);
 
             // Clear the link from delivery challans
@@ -240,6 +279,14 @@ class InvoiceController extends Controller
                 'invoice_id' => null
             ]);
         });
+
+        PushNotificationService::sendToRoles(
+            ['admin', 'partner'],
+            'Invoice Cancelled 🚫',
+            "Invoice {$invoice->invoice_number} has been cancelled.",
+            'invoice_cancelled',
+            ['invoice_id' => $invoice->id]
+        );
 
         return response()->json([
             'message' => 'Invoice cancelled successfully.',
@@ -256,13 +303,15 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Unauthorized. Only accounts with Finance permission can edit invoices.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'invoice_date' => 'required|date',
-            'remarks' => 'nullable|string',
-            'eway_bill_no' => 'nullable|string',
-            'delivery_challan_id' => 'nullable|exists:delivery_challans,id',
-            'job_card_ids' => 'nullable|array',
-            'job_card_ids.*' => 'exists:job_cards,id',
+            'remarks' => 'nullable|string|max:2000',
+            'eway_bill_no' => 'nullable|string|max:100',
+            'purchase_order_ids' => 'nullable|array|max:100',
+            'purchase_order_ids.*' => 'integer|exists:purchase_orders,id',
+            'delivery_challan_id' => 'nullable|integer|exists:delivery_challans,id',
+            'job_card_ids' => 'nullable|array|max:100',
+            'job_card_ids.*' => 'integer|exists:job_cards,id',
             'status' => 'nullable|string|in:draft,unpaid',
         ]);
 
@@ -273,17 +322,36 @@ class InvoiceController extends Controller
         }
 
         try {
-            return DB::transaction(function () use ($request, $invoice) {
+            $poIds = $request->input('purchase_order_ids');
+            if (empty($poIds)) {
+                $poIds = $invoice->purchaseOrders()->pluck('purchase_orders.id')->toArray();
+                if (empty($poIds)) {
+                    $poIds = [$invoice->purchase_order_id];
+                }
+            }
+            $poIds = array_filter(array_unique(array_map('intval', (array)$poIds)));
+
+            if (empty($poIds)) {
+                return response()->json(['message' => 'Please select at least one Purchase Order.'], 422);
+            }
+
+            $pos = PurchaseOrder::whereIn('id', $poIds)->get();
+            $customerNames = $pos->pluck('customer_name')->unique();
+            if ($customerNames->count() > 1) {
+                return response()->json(['message' => 'All selected Purchase Orders must belong to the same customer.'], 422);
+            }
+
+            return DB::transaction(function () use ($validated, $invoice, $poIds) {
                 // 1. Identify items to bill
                 $itemsToBill = [];
                 $dc = null;
-                if ($request->delivery_challan_id) {
-                    $dc = DeliveryChallan::findOrFail($request->delivery_challan_id);
+                if (isset($validated['delivery_challan_id'])) {
+                    $dc = DeliveryChallan::findOrFail($validated['delivery_challan_id']);
                     if ($dc->invoice_id && (int)$dc->invoice_id !== (int)$invoice->id) {
                         throw new Exception("Delivery Challan {$dc->challan_number} is already linked to another Invoice.");
                     }
-                    if ((int)$dc->purchase_order_id !== (int)$invoice->purchase_order_id) {
-                        throw new Exception("Selected Purchase Order does not match the Delivery Challan.");
+                    if (!in_array((int)$dc->purchase_order_id, $poIds)) {
+                        throw new Exception("Selected Purchase Orders do not match the Delivery Challan.");
                     }
 
                     $dcItems = DeliveryChallanItem::where('delivery_challan_id', $dc->id)->get();
@@ -294,8 +362,8 @@ class InvoiceController extends Controller
                             'quantity' => $dcItem->quantity_delivered,
                         ];
                     }
-                } elseif ($request->job_card_ids && count($request->job_card_ids) > 0) {
-                    foreach ($request->job_card_ids as $jobCardId) {
+                } elseif (isset($validated['job_card_ids']) && count($validated['job_card_ids']) > 0) {
+                    foreach ($validated['job_card_ids'] as $jobCardId) {
                         $job = JobCard::findOrFail($jobCardId);
                         if ($job->status !== 'completed') {
                             throw new Exception("Job Card {$job->job_card_number} is not completed and cannot be invoiced.");
@@ -335,8 +403,8 @@ class InvoiceController extends Controller
 
                     $poItem = PoItem::findOrFail($billItem['po_item_id']);
                     
-                    if ($poItem->purchase_order_id !== (int)$invoice->purchase_order_id) {
-                        throw new Exception("Items must belong to the selected Purchase Order.");
+                    if (!in_array((int)$poItem->purchase_order_id, $poIds)) {
+                        throw new Exception("Items must belong to the selected Purchase Orders.");
                     }
 
                     $qty = $billItem['quantity'];
@@ -371,7 +439,7 @@ class InvoiceController extends Controller
                 $grandTotal = $subtotal + $cgstTotal + $sgstTotal + $igstTotal;
 
                 // Remove existing Delivery Challan linkage if it changed
-                if ($invoice->delivery_challan_id && (int)$invoice->delivery_challan_id !== (int)$request->delivery_challan_id) {
+                if ($invoice->delivery_challan_id && (int)$invoice->delivery_challan_id !== (int)($validated['delivery_challan_id'] ?? null)) {
                     DeliveryChallan::where('id', $invoice->delivery_challan_id)->update(['invoice_id' => null]);
                 }
 
@@ -380,17 +448,21 @@ class InvoiceController extends Controller
 
                 // Update the Invoice
                 $invoice->update([
-                    'invoice_date' => $request->invoice_date,
-                    'delivery_challan_id' => $request->delivery_challan_id,
+                    'purchase_order_id' => $poIds[0],
+                    'invoice_date' => $validated['invoice_date'],
+                    'delivery_challan_id' => $validated['delivery_challan_id'] ?? null,
                     'subtotal' => $subtotal,
                     'cgst_total' => $cgstTotal,
                     'sgst_total' => $sgstTotal,
                     'igst_total' => $igstTotal,
                     'grand_total' => $grandTotal,
-                    'remarks' => $request->remarks,
-                    'eway_bill_no' => $request->eway_bill_no,
-                    'status' => $request->status ?? $invoice->status,
+                    'remarks' => $validated['remarks'] ?? null,
+                    'eway_bill_no' => $validated['eway_bill_no'] ?? null,
+                    'status' => $validated['status'] ?? $invoice->status,
                 ]);
+
+                // Sync pivot relation
+                $invoice->purchaseOrders()->sync($poIds);
 
                 // Save New Invoice Items
                 foreach ($invoiceItemsData as $itemData) {
@@ -405,9 +477,17 @@ class InvoiceController extends Controller
                     ]);
                 }
 
+                PushNotificationService::sendToRoles(
+                    ['admin', 'partner'],
+                    'Invoice Edited 📝',
+                    "Invoice {$invoice->invoice_number} has been updated.",
+                    'invoice_edited',
+                    ['invoice_id' => $invoice->id]
+                );
+
                 return response()->json([
                     'message' => 'Invoice updated successfully.',
-                    'invoice' => $invoice->load(['purchaseOrder', 'deliveryChallan', 'items.poItem'])
+                    'invoice' => $invoice->load(['purchaseOrder', 'purchaseOrders', 'deliveryChallan', 'items.poItem'])
                 ]);
             });
         } catch (Exception $e) {
@@ -451,7 +531,7 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $request->validate([
+        $validated = $request->validate([
             'payment_method' => 'required|string|in:cash,bank_transfer,upi,cheque,card',
             'transaction_reference' => 'nullable|string|max:255',
             'payment_date' => 'required|date',
@@ -470,15 +550,100 @@ class InvoiceController extends Controller
 
         $invoice->update([
             'status' => 'paid',
-            'payment_method' => $request->payment_method,
-            'transaction_reference' => $request->transaction_reference,
-            'payment_date' => $request->payment_date,
-            'payment_remarks' => $request->payment_remarks,
+            'payment_method' => $validated['payment_method'],
+            'transaction_reference' => $validated['transaction_reference'] ?? null,
+            'payment_date' => $validated['payment_date'],
+            'payment_remarks' => $validated['payment_remarks'] ?? null,
         ]);
+
+        PushNotificationService::sendToRoles(
+            ['admin', 'partner'],
+            'Payment Received 💰',
+            "Payment recorded for Invoice {$invoice->invoice_number}.",
+            'invoice_payment',
+            ['invoice_id' => $invoice->id]
+        );
 
         return response()->json([
             'message' => 'Payment recorded successfully.',
             'invoice' => $invoice->load(['purchaseOrder', 'deliveryChallan', 'items.poItem'])
         ]);
+    }
+
+    /**
+     * Generate PDF for the invoice.
+     */
+    public function generatePdf(Request $request, $id)
+    {
+        $invoice = Invoice::with(['purchaseOrder', 'deliveryChallan', 'items.poItem', 'items.jobCard', 'purchaseOrders'])
+            ->findOrFail($id);
+
+        $config = [
+            'showQrCode' => $request->query('showQrCode', 'true') === 'true',
+            'showCompanyTagline' => $request->query('showCompanyTagline', 'true') === 'true',
+            'showBankDetails' => $request->query('showBankDetails', 'true') === 'true',
+            'showAmountInWords' => $request->query('showAmountInWords', 'true') === 'true',
+            'showJobReferences' => $request->query('showJobReferences', 'true') === 'true',
+            'showHsnSac' => $request->query('showHsnSac', 'true') === 'true',
+            'showPartNumbers' => $request->query('showPartNumbers', 'true') === 'true',
+            'showSerialNumbers' => $request->query('showSerialNumbers', 'false') === 'true',
+            'enableWatermark' => \App\Models\Setting::getVal('enable_watermark', '1') === '1',
+            'watermarkText' => \App\Models\Setting::getVal('global_watermark_text', ''),
+            'downloadedBy' => $request->user() ? $request->user()->name : 'System',
+        ];
+
+        if (\App\Models\Setting::getVal('enable_qr_verification', '1') === '1') {
+            $verificationUrl = url('/verify/INV-' . $invoice->id);
+            $renderer = new \BaconQrCode\Renderer\ImageRenderer(
+                new \BaconQrCode\Renderer\RendererStyle\RendererStyle(100),
+                new \BaconQrCode\Renderer\Image\SvgImageBackEnd()
+            );
+            $writer = new \BaconQrCode\Writer($renderer);
+            $config['qrCodeSvg'] = $writer->writeString($verificationUrl);
+        }
+
+        // Load view and pass data
+        $amountInWords = $this->numberToWords($invoice->grand_total);
+        $logo = \App\Models\Setting::getVal('branding_pdf_logo') ?: \App\Models\Setting::getVal('company_logo');
+        $pdf = Pdf::setOptions(['isPhpEnabled' => true])->loadView('pdf.invoice', compact('invoice', 'amountInWords', 'config', 'logo'));
+        
+        // DomPDF configuration for A4 portrait
+        $pdf->setPaper('a4', 'portrait');
+
+        if ($request->query('save') === 'true') {
+            $fileName = 'invoices/' . $invoice->invoice_number . '_' . time() . '.pdf';
+            \Illuminate\Support\Facades\Storage::disk('public')->put($fileName, $pdf->output());
+            return response()->json(['url' => asset('storage/' . $fileName)]);
+        }
+
+        return $pdf->download($invoice->invoice_number . '.pdf');
+    }
+
+    private function numberToWords($num)
+    {
+        $num = (int)$num;
+        if ($num == 0) return 'Zero';
+
+        $ones = [
+            0 => '', 1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five',
+            6 => 'Six', 7 => 'Seven', 8 => 'Eight', 9 => 'Nine', 10 => 'Ten',
+            11 => 'Eleven', 12 => 'Twelve', 13 => 'Thirteen', 14 => 'Fourteen',
+            15 => 'Fifteen', 16 => 'Sixteen', 17 => 'Seventeen', 18 => 'Eighteen', 19 => 'Nineteen'
+        ];
+        $tens = [
+            0 => '', 1 => 'Ten', 2 => 'Twenty', 3 => 'Thirty', 4 => 'Forty',
+            5 => 'Fifty', 6 => 'Sixty', 7 => 'Seventy', 8 => 'Eighty', 9 => 'Ninety'
+        ];
+
+        $numToWords = function($n) use (&$numToWords, $ones, $tens) {
+            if ($n < 20) return $ones[$n];
+            if ($n < 100) return $tens[(int)($n / 10)] . ($n % 10 != 0 ? ' ' . $ones[$n % 10] : '');
+            if ($n < 1000) return $ones[(int)($n / 100)] . ' Hundred' . ($n % 100 != 0 ? ' ' . $numToWords($n % 100) : '');
+            if ($n < 100000) return $numToWords((int)($n / 1000)) . ' Thousand' . ($n % 1000 != 0 ? ' ' . $numToWords($n % 1000) : '');
+            if ($n < 10000000) return $numToWords((int)($n / 100000)) . ' Lakh' . ($n % 100000 != 0 ? ' ' . $numToWords($n % 100000) : '');
+            return $numToWords((int)($n / 10000000)) . ' Crore' . ($n % 10000000 != 0 ? ' ' . $numToWords($n % 10000000) : '');
+        };
+
+        return 'Rupees ' . $numToWords($num) . ' Only';
     }
 }

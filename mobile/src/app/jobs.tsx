@@ -21,8 +21,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
 import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
+import TechFocalLoader from '@/components/tech-focal-loader';
+import { offlinePost } from '@/utils/offlineApi';
+
+
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -58,6 +63,8 @@ interface JobCard {
   remarks: string | null;
   assigned_worker_id: number | null;
   machine_id: number | null;
+  machining_started_at: string | null;
+  machining_duration_seconds: number;
   worker?: {
     id: number;
     name: string;
@@ -85,6 +92,8 @@ interface JobCard {
       challan_date: string;
     };
   };
+  is_archived?: boolean | number;
+  delivery_challan_item?: any;
 }
 
 interface Worker {
@@ -97,7 +106,39 @@ interface Machine {
   machine_code: string;
   name: string;
   status: 'idle' | 'busy' | 'maintenance' | 'inactive';
+  active_jobs?: JobCard[];
 }
+
+function formatDuration(totalSeconds: number) {
+  if (!totalSeconds) return '00:00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+const LiveTimer = ({ startTime, accumulated = 0 }: { startTime: string | null, accumulated?: number }) => {
+  const [seconds, setSeconds] = useState(accumulated);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (startTime) {
+      const start = new Date(startTime).getTime();
+      interval = setInterval(() => {
+        const now = new Date().getTime();
+        const diff = Math.floor((now - start) / 1000);
+        setSeconds(accumulated + diff);
+      }, 1000);
+    } else {
+      setSeconds(accumulated);
+    }
+    return () => clearInterval(interval);
+  }, [startTime, accumulated]);
+
+  return <Text>{formatDuration(seconds)}</Text>;
+};
+
+const STATUSES = ['pending', 'in_progress', 'inspection', 'completed'] as const;
 
 export default function JobsScreen() {
   const { token, apiUrl } = useAuth();
@@ -121,6 +162,7 @@ export default function JobsScreen() {
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
   const horizontalScrollRef = React.useRef<ScrollView>(null);
 
   // Detail view Modal
@@ -142,16 +184,17 @@ export default function JobsScreen() {
   const [editingDrawingPath, setEditingDrawingPath] = useState<string | null>(null);
   const [mobileNewName, setMobileNewName] = useState('');
 
-  const fetchJobsData = async () => {
+  const fetchJobsData = async (fetchArchived = showArchived) => {
     if (!token || !apiUrl) return;
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
       
+      const endpoint = fetchArchived ? `${apiUrl}/api/jobs?archived=1` : `${apiUrl}/api/jobs`;
       const [jobsRes, workersRes, machinesRes] = await Promise.all([
-        axios.get(`${apiUrl}/api/jobs`, { headers }),
-        axios.get(`${apiUrl}/api/workers`, { headers }).catch(() => ({ data: [] })),
-        axios.get(`${apiUrl}/api/machines`, { headers }).catch(() => ({ data: [] }))
+        offlineGet(endpoint, { headers }),
+        offlineGet(`${apiUrl}/api/workers`, { headers }).catch(() => ({ data: [] })),
+        offlineGet(`${apiUrl}/api/machines`, { headers }).catch(() => ({ data: [] }))
       ]);
 
       setJobs(jobsRes.data);
@@ -314,29 +357,28 @@ export default function JobsScreen() {
     setAssigning(true);
     const formData = new FormData();
 
+    let payload: any = new FormData();
     if (Platform.OS === 'web') {
-      formData.append('file', fileOrAsset);
+      payload.append('file', fileOrAsset);
     } else {
       const localUri = fileOrAsset.uri;
       const filename = fileOrAsset.fileName || localUri.split('/').pop() || 'drawing.jpg';
       const match = /\.(\w+)$/.exec(filename);
       const type = match ? `image/${match[1]}` : 'image/jpeg';
 
-      formData.append('file', {
+      payload = [{
+        name: 'file',
+        type: 'file',
         uri: localUri,
-        name: filename,
-        type
-      } as any);
+        fileName: filename,
+        mimeType: type
+      }];
     }
 
     try {
-      const headers = { 
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data'
-      };
+      const res = await offlinePost(`${apiUrl}/api/jobs/${selectedJob.id}/drawing`, payload, {}, true);
+      Alert.alert('Success', res.data?.offline ? 'Drawing queued for upload.' : 'Drawing uploaded successfully.');
 
-      const res = await axios.post(`${apiUrl}/api/jobs/${selectedJob.id}/drawing`, formData, { headers });
-      Alert.alert('Success', 'Drawing uploaded successfully.');
       
       const updatedJob = {
         ...selectedJob,
@@ -461,18 +503,47 @@ export default function JobsScreen() {
     }
   };
 
-  const STATUSES = ['pending', 'in_progress', 'inspection', 'completed'] as const;
 
   const handleTabPress = (idx: number) => {
-    setActiveTab(idx);
-    horizontalScrollRef.current?.scrollTo({ x: idx * width, animated: true });
+    if (idx === 4) {
+      // Archive tab
+      setActiveTab(4);
+      if (!showArchived) {
+        setJobs([]);
+        setShowArchived(true);
+        fetchJobsData(true);
+      }
+      horizontalScrollRef.current?.scrollTo({ x: 4 * width, animated: true });
+    } else {
+      setActiveTab(idx);
+      if (showArchived) {
+        setJobs([]);
+        setShowArchived(false);
+        fetchJobsData(false);
+      }
+      horizontalScrollRef.current?.scrollTo({ x: idx * width, animated: true });
+    }
   };
 
   const handleMomentumScrollEnd = (event: any) => {
     const contentOffset = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffset / width);
-    if (index >= 0 && index < 4 && index !== activeTab) {
-      setActiveTab(index);
+    if (index >= 0 && index < 5 && index !== activeTab) {
+      if (index === 4) {
+        setActiveTab(4);
+        if (!showArchived) {
+          setJobs([]);
+          setShowArchived(true);
+          fetchJobsData(true);
+        }
+      } else {
+        setActiveTab(index);
+        if (showArchived) {
+          setJobs([]);
+          setShowArchived(false);
+          fetchJobsData(false);
+        }
+      }
     }
   };
 
@@ -515,7 +586,7 @@ export default function JobsScreen() {
           <Text style={styles.headerTitle}>Job Cards</Text>
           <Text style={styles.headerSubtitle}>Floor Controller Panel</Text>
         </View>
-        <TouchableOpacity style={styles.refreshButton} onPress={fetchJobsData} disabled={loading}>
+        <TouchableOpacity style={styles.refreshButton} onPress={() => fetchJobsData()} disabled={loading}>
           {loading ? (
             <ActivityIndicator size="small" color="#2563eb" />
           ) : (
@@ -526,10 +597,16 @@ export default function JobsScreen() {
 
       {/* Kanban Navigation Tabs */}
       <View style={styles.tabsContainer}>
-        {STATUSES.map((status, index) => {
+        {[...STATUSES, 'archived'].map((status, index) => {
           const isActive = activeTab === index;
-          const styleMeta = getStatusTabStyle(status, isActive);
-          const count = jobs.filter(j => j.status === status).length;
+          // For archived tab, style differently or reuse completed style
+          const styleMeta = status === 'archived' 
+            ? { borderBottomColor: isActive ? '#64748b' : 'transparent', textColor: isActive ? '#64748b' : '#94a3b8', bg: 'transparent', badgeBg: '#e2e8f0', badgeText: '#475569' }
+            : getStatusTabStyle(status as any, isActive);
+            
+          const count = status === 'archived' 
+            ? (showArchived ? jobs.length : 0) 
+            : (showArchived ? 0 : jobs.filter(j => j.status === status).length);
           
           return (
             <TouchableOpacity
@@ -544,7 +621,8 @@ export default function JobsScreen() {
               <Text style={[styles.tabLabel, { color: styleMeta.textColor }]}>
                 {status === 'pending' ? 'Pending' :
                  status === 'in_progress' ? 'Machining' :
-                 status === 'inspection' ? 'QC Insp.' : 'Comp. / Deliv.'}
+                 status === 'inspection' ? 'QC Insp.' : 
+                 status === 'completed' ? 'Comp. / Deliv.' : 'Archived'}
               </Text>
               <View style={[styles.tabBadge, { backgroundColor: styleMeta.badgeBg }]}>
                 <Text style={[styles.tabBadgeText, { color: styleMeta.badgeText }]}>
@@ -580,13 +658,17 @@ export default function JobsScreen() {
         style={styles.kanbanScroll}
         contentContainerStyle={{ height: '100%' }}
       >
-        {STATUSES.map((status) => {
+        {[...STATUSES, 'archived'].map((status) => {
           const statusJobs = jobs.filter(j => {
             const matchesSearch = 
               j.job_card_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
               (j.po_item?.purchase_order?.customer_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
               (j.machine?.machine_code || '').toLowerCase().includes(searchQuery.toLowerCase());
-            return matchesSearch && j.status === status;
+              
+            if (status === 'archived') {
+              return matchesSearch && j.is_archived;
+            }
+            return matchesSearch && j.status === status && !j.is_archived;
           });
 
           return (
@@ -597,8 +679,7 @@ export default function JobsScreen() {
               >
                 {loading ? (
                   <View style={styles.centerSpinner}>
-                    <ActivityIndicator size="large" color="#2563eb" />
-                    <Text style={styles.spinnerText}>Fetching jobs...</Text>
+                    <TechFocalLoader />
                   </View>
                 ) : statusJobs.length === 0 ? (
                   <View style={styles.emptyContainer}>
@@ -668,6 +749,11 @@ export default function JobsScreen() {
                           {/* Customer and quantity */}
                           <View style={styles.cardSection}>
                             <Text style={styles.customerName}>{job.po_item?.purchase_order?.customer_name || 'Direct Log'}</Text>
+                            {job.po_item?.purchase_order?.po_number && (
+                              <Text style={{ fontSize: 11, color: '#64748b', marginBottom: 2, fontWeight: '600' }}>
+                                PO: {job.po_item.purchase_order.po_number}
+                              </Text>
+                            )}
                             <Text style={styles.descriptionText} numberOfLines={2}>
                               {job.po_item?.description || 'No item description available'}
                             </Text>
@@ -675,7 +761,6 @@ export default function JobsScreen() {
 
                           <View style={styles.divider} />
 
-                          {/* Operational parameters */}
                           <View style={styles.cardDetailsGrid}>
                             <View style={styles.gridCol}>
                               <Text style={styles.gridLabel}>QUANTITY</Text>
@@ -694,6 +779,24 @@ export default function JobsScreen() {
                               </Text>
                             </View>
                           </View>
+                          
+                          {/* Timer Row */}
+                          {job.status === 'in_progress' && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingHorizontal: 4 }}>
+                              <Clock size={14} color="#2563eb" style={{ marginRight: 6 }} />
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#2563eb', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                                <LiveTimer startTime={job.machining_started_at} accumulated={job.machining_duration_seconds} />
+                              </Text>
+                            </View>
+                          )}
+                          {(job.status === 'completed' || job.status === 'inspection') && job.machining_duration_seconds > 0 && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, paddingHorizontal: 4 }}>
+                              <Check size={14} color="#64748b" style={{ marginRight: 6 }} />
+                              <Text style={{ fontSize: 13, fontWeight: '600', color: '#64748b', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                                {formatDuration(job.machining_duration_seconds)}
+                              </Text>
+                            </View>
+                          )}
 
                           {/* Footer details */}
                           <View style={styles.cardBottomBar}>
@@ -984,6 +1087,24 @@ export default function JobsScreen() {
                     {selectedJob.end_date && (
                       <Text style={styles.dateStamp}>End Date: <Text style={{ fontWeight: '600' }}>{selectedJob.end_date}</Text></Text>
                     )}
+                  </View>
+
+                  {/* Production Timer Box */}
+                  <View style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, marginBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Production Timer</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Clock size={16} color={selectedJob.status === 'in_progress' ? '#2563eb' : '#475569'} style={{ marginRight: 6 }} />
+                        <Text style={{ fontSize: 18, fontWeight: '800', color: selectedJob.status === 'in_progress' ? '#2563eb' : '#475569', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                          <LiveTimer startTime={selectedJob.status === 'in_progress' ? selectedJob.machining_started_at : null} accumulated={selectedJob.machining_duration_seconds} />
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ backgroundColor: selectedJob.status === 'in_progress' ? '#dbeafe' : '#f1f5f9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: selectedJob.status === 'in_progress' ? '#1e40af' : '#64748b' }}>
+                        {selectedJob.status === 'in_progress' ? 'RUNNING' : 'STOPPED'}
+                      </Text>
+                    </View>
                   </View>
 
                   {/* Trigger buttons */}
@@ -2063,3 +2184,4 @@ const styles = StyleSheet.create({
     color: '#2563eb',
   },
 });
+

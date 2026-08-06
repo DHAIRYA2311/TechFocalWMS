@@ -23,9 +23,39 @@ import {
   Upload,
   Eye,
   List,
-  ChevronRight
+  ChevronRight,
+  X
 } from 'lucide-react';
 import { useRealTime } from '../hooks/useRealTime';
+
+function formatDuration(totalSeconds) {
+  if (!totalSeconds) return '00:00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+const LiveTimer = ({ startTime, accumulated = 0 }) => {
+  const [seconds, setSeconds] = useState(accumulated);
+
+  useEffect(() => {
+    let interval;
+    if (startTime) {
+      const start = new Date(startTime).getTime();
+      interval = setInterval(() => {
+        const now = new Date().getTime();
+        const diff = Math.floor((now - start) / 1000);
+        setSeconds(accumulated + diff);
+      }, 1000);
+    } else {
+      setSeconds(accumulated);
+    }
+    return () => clearInterval(interval);
+  }, [startTime, accumulated]);
+
+  return <span>{formatDuration(seconds)}</span>;
+};
 
 export default function JobOperations({ user }) {
   const location = useLocation();
@@ -44,7 +74,8 @@ export default function JobOperations({ user }) {
   const [viewMode, setViewMode] = useState(() => {
     return user && ['worker', 'supervisor', 'helper'].includes(user.role) ? 'list' : 'kanban';
   });
-  const [viewingJob, setViewingJob] = useState(null); // Selected Job Card object for detailed splitscreen view
+  const [viewingJob, setViewingJob] = useState(null); // Selected Job Card object for Drawer view
+  const [editingJob, setEditingJob] = useState(null); // Full edit mode
   
   // Assignment & Status Form State (used inside details page)
   const [workerId, setWorkerId] = useState('');
@@ -84,7 +115,7 @@ export default function JobOperations({ user }) {
         params.archived = 1;
       }
 
-      const response = await axios.get('http://127.0.0.1:8000/api/jobs', {
+      const response = await axios.get('/api/jobs', {
         headers: { Authorization: `Bearer ${token}` },
         params
       });
@@ -110,7 +141,7 @@ export default function JobOperations({ user }) {
     setWorkersLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/workers', {
+      const response = await axios.get('/api/workers', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setWorkers(response.data);
@@ -126,7 +157,7 @@ export default function JobOperations({ user }) {
     setMachinesLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/machines', {
+      const response = await axios.get('/api/machines', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMachines(response.data);
@@ -165,9 +196,20 @@ export default function JobOperations({ user }) {
     setFeedback(null);
   };
 
+  const handleEditJob = (job) => {
+    setEditingJob(job);
+    setViewingJob(job);
+    setWorkerId(job.assigned_worker_id || '');
+    setMachineId(job.machine_id || '');
+    setRemarks(job.remarks || '');
+    setSelectedPreviewPath(job.drawing_path && job.drawing_path.length > 0 ? job.drawing_path[0].path : null);
+    setFeedback(null);
+  };
+
   // Close splitscreen view
   const handleBack = () => {
     setViewingJob(null);
+    setEditingJob(null);
     setFeedback(null);
     fetchJobs(false);
   };
@@ -182,7 +224,7 @@ export default function JobOperations({ user }) {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.put(`http://127.0.0.1:8000/api/jobs/${viewingJob.id}/assign`, {
+      const response = await axios.put(`/api/jobs/${viewingJob.id}/assign`, {
         assigned_worker_id: workerId,
         machine_id: machineId
       }, {
@@ -208,7 +250,7 @@ export default function JobOperations({ user }) {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.put(`http://127.0.0.1:8000/api/jobs/${viewingJob.id}/status`, {
+      const response = await axios.put(`/api/jobs/${viewingJob.id}/status`, {
         status,
         remarks: remarksText || remarks
       }, {
@@ -230,7 +272,7 @@ export default function JobOperations({ user }) {
 
     try {
       const token = localStorage.getItem('auth_token');
-      await axios.put(`http://127.0.0.1:8000/api/jobs/${jobId}/status`, {
+      await axios.put(`/api/jobs/${jobId}/status`, {
         status,
         remarks: remarksText
       }, {
@@ -258,7 +300,7 @@ export default function JobOperations({ user }) {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post(`http://127.0.0.1:8000/api/jobs/${viewingJob.id}/drawing`, formData, {
+      const response = await axios.post(`/api/jobs/${viewingJob.id}/drawing`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${token}`
@@ -289,7 +331,7 @@ export default function JobOperations({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.delete(`http://127.0.0.1:8000/api/jobs/${viewingJob.id}/drawing`, {
+      const response = await axios.delete(`/api/jobs/${viewingJob.id}/drawing`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { path: pathToDelete }
       });
@@ -316,7 +358,7 @@ export default function JobOperations({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.put(`http://127.0.0.1:8000/api/jobs/${viewingJob.id}/drawing/rename`, {
+      const response = await axios.put(`/api/jobs/${viewingJob.id}/drawing/rename`, {
         path,
         name: newName
       }, {
@@ -362,7 +404,7 @@ export default function JobOperations({ user }) {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.put(`http://127.0.0.1:8000/api/jobs/${job.id}/status`, {
+      const response = await axios.put(`/api/jobs/${job.id}/status`, {
         status: targetStatus,
         remarks: job.remarks || `Moved status to ${targetStatus} via Kanban board drag-and-drop.`
       }, {
@@ -480,10 +522,10 @@ export default function JobOperations({ user }) {
                   const isDelivered = !!job.delivery_challan_item;
                   
                   return (
-                    <div 
+                    <div
                       key={job.id} 
                       className="card table-row-hover"
-                      onClick={() => handleViewJobDetails(job)}
+                      onClick={() => handleEditJob(job)}
                       style={{ 
                         padding: '16px', 
                         display: 'flex', 
@@ -568,7 +610,7 @@ export default function JobOperations({ user }) {
                               return (
                                 <a 
                                   key={dIdx}
-                                  href={`http://127.0.0.1:8000/${dwg.path}`}
+                                  href={`${import.meta.env.VITE_API_URL}/${dwg.path}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   style={{ 
@@ -587,7 +629,7 @@ export default function JobOperations({ user }) {
                                 >
                                   {isImg ? (
                                     <img 
-                                      src={`http://127.0.0.1:8000/${dwg.path}`} 
+                                      src={`${import.meta.env.VITE_API_URL}/${dwg.path}`} 
                                       alt={dwg.name}
                                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                     />
@@ -612,10 +654,11 @@ export default function JobOperations({ user }) {
   };
 
   // ==========================================
-  // VIEW 1: DETAILED SPLITSCREEN VIEW
+  // VIEW 1: DETAILED SPLITSCREEN VIEW (FULL EDIT)
   // ==========================================
-  if (viewingJob) {
-    const statusMeta = getStatusBadgeStyles(viewingJob.status, !!viewingJob.delivery_challan_item);
+  if (editingJob) {
+    const jobToUse = editingJob;
+    const statusMeta = getStatusBadgeStyles(jobToUse.status, !!jobToUse.delivery_challan_item);
     return (
       <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         
@@ -626,7 +669,7 @@ export default function JobOperations({ user }) {
           </button>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: '700' }}>Job Card: {viewingJob.job_card_number}</h2>
+              <h2 style={{ fontSize: '18px', fontWeight: '700' }}>Job Card: {jobToUse.job_card_number}</h2>
               <span style={{ 
                 fontSize: '11px', 
                 padding: '2px 8px', 
@@ -640,7 +683,7 @@ export default function JobOperations({ user }) {
               </span>
             </div>
             <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-              Linked to Purchase Order #{viewingJob.po_item?.purchase_order?.po_number} ({viewingJob.po_item?.purchase_order?.customer_name})
+              Linked to Purchase Order #{jobToUse.po_item?.purchase_order?.po_number} ({jobToUse.po_item?.purchase_order?.customer_name})
             </p>
           </div>
         </div>
@@ -703,7 +746,10 @@ export default function JobOperations({ user }) {
                       onChange={(val) => setWorkerId(val)}
                       options={[
                         { value: '', label: '-- Choose Operator --' },
-                        ...workers.map(w => ({ value: w.id, label: w.name }))
+                        ...workers.map(w => ({ 
+                          value: w.id, 
+                          label: `${w.name} ${w.active_jobs_count > 0 ? `(${w.active_jobs_count} Active)` : ''}` 
+                        }))
                       ]}
                       style={{ height: '36px' }}
                     />
@@ -714,11 +760,17 @@ export default function JobOperations({ user }) {
                     <CustomSelect
                       value={machineId}
                       onChange={(val) => setMachineId(val)}
-                      options={machines.map(m => ({
-                        value: m.id,
-                        label: `${m.machine_code} - ${m.name} (${m.status === 'maintenance' ? 'MAINTENANCE - DOWN' : m.status.toUpperCase()})`,
-                        disabled: m.status === 'maintenance' || m.status === 'inactive'
-                      }))}
+                      options={machines.map(m => {
+                        const isBusy = m.active_jobs && m.active_jobs.length > 0 && !m.active_jobs.some(j => j.id === jobToUse.id);
+                        const busyLabel = isBusy ? ` (BUSY: Job #${m.active_jobs[0].job_card_number})` : '';
+                        const statusLabel = m.status === 'maintenance' ? ' (MAINTENANCE)' : m.status === 'inactive' ? ' (INACTIVE)' : busyLabel;
+                        
+                        return {
+                          value: m.id,
+                          label: `${m.machine_code} - ${m.name}${statusLabel}`,
+                          disabled: m.status === 'maintenance' || m.status === 'inactive' || isBusy
+                        };
+                      })}
                       placeholder="Select machine..."
                       style={{ height: '36px' }}
                     />
@@ -787,12 +839,25 @@ export default function JobOperations({ user }) {
               </h3>
 
               {/* Status dates */}
-              <div style={{ display: 'flex', gap: '20px', fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '14px' }}>
+              {/* Status dates and Timer */}
+              <div style={{ display: 'flex', gap: '20px', fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '14px', alignItems: 'center' }}>
                 {viewingJob.start_date && (
                   <span>Start Date: <strong>{new Date(viewingJob.start_date).toLocaleDateString()}</strong></span>
                 )}
                 {viewingJob.end_date && (
                   <span>Completion Date: <strong>{new Date(viewingJob.end_date).toLocaleDateString()}</strong></span>
+                )}
+                
+                {viewingJob.status === 'in_progress' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '18px', fontWeight: '800', color: '#2563eb', padding: '4px 12px', backgroundColor: '#dbeafe', borderRadius: '8px', border: '1px solid #bfdbfe', fontFamily: 'monospace' }}>
+                    <Clock size={18} /> <LiveTimer startTime={viewingJob.machining_started_at} accumulated={viewingJob.machining_duration_seconds} />
+                  </div>
+                )}
+                
+                {(viewingJob.status === 'completed' || viewingJob.status === 'inspection') && viewingJob.machining_duration_seconds > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '15px', fontWeight: '700', color: 'var(--color-text-muted)', padding: '4px 12px', backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', border: '1px solid var(--color-border)', fontFamily: 'monospace' }}>
+                    <Check size={16} /> {formatDuration(viewingJob.machining_duration_seconds)}
+                  </div>
                 )}
               </div>
 
@@ -892,7 +957,7 @@ export default function JobOperations({ user }) {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--color-bg-base)' }}>
               <span style={{ fontSize: '13px', fontWeight: '600' }}>Technical Drawings & Blueprints</span>
               {selectedPreviewPath && (
-                <a href={`http://127.0.0.1:8000/${selectedPreviewPath}`} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-primary)' }}>
+                <a href={`${import.meta.env.VITE_API_URL}/${selectedPreviewPath}`} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-primary)' }}>
                   Open Selected Blueprint <ExternalLink size={12} />
                 </a>
               )}
@@ -979,10 +1044,10 @@ export default function JobOperations({ user }) {
               <div style={{ flexGrow: 1, backgroundColor: '#525659', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', position: 'relative' }}>
                 {selectedPreviewPath ? (
                   isPdf(selectedPreviewPath) ? (
-                    <iframe src={`http://127.0.0.1:8000/${selectedPreviewPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Drawing Blueprint" />
+                    <iframe src={`${import.meta.env.VITE_API_URL}/${selectedPreviewPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Drawing Blueprint" />
                   ) : (
                     <img 
-                      src={`http://127.0.0.1:8000/${selectedPreviewPath}`} 
+                      src={`${import.meta.env.VITE_API_URL}/${selectedPreviewPath}`} 
                       alt="Job Drawing" 
                       style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.15)' }} 
                     />
@@ -1234,7 +1299,7 @@ export default function JobOperations({ user }) {
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <button 
-                        onClick={() => handleViewJobDetails(job)}
+                        onClick={() => handleEditJob(job)}
                         className="logout-btn"
                         style={{ padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', height: '28px' }}
                       >
@@ -1254,9 +1319,8 @@ export default function JobOperations({ user }) {
             VIEW Mode: KANBAN BOARD (Admins/Managers)
            ========================================== */
         <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(4, minmax(260px, 1fr))', 
-          gap: '16px', 
+          display: 'flex', 
+          gap: '20px', 
           overflowX: 'auto', 
           paddingBottom: '10px',
           alignItems: 'stretch',
@@ -1303,7 +1367,8 @@ export default function JobOperations({ user }) {
                 display: 'flex', 
                 flexDirection: 'column', 
                 gap: '0',
-                minWidth: '260px', 
+                width: '320px', 
+                minWidth: '320px', 
                 backgroundColor: dragOverCol === colKey ? 'var(--color-primary-light)' : 'var(--color-bg-base)', 
                 border: dragOverCol === colKey ? '2px dashed var(--color-primary)' : '1px solid var(--color-border)', 
                 borderRadius: 'var(--radius-md)', 
@@ -1313,20 +1378,27 @@ export default function JobOperations({ user }) {
               }}
               >
                 
-                {/* Column Header */}
                 <div style={{ 
                   display: 'flex', 
-                  justifyContent: 'space-between', 
+                  flexDirection: 'column', 
+                  justifyContent: 'center', 
                   alignItems: 'center', 
                   padding: '10px 14px', 
                   backgroundColor: headerBg, 
                   borderBottom: `1px solid rgba(0,0,0,0.05)`,
-                  flexShrink: 0
+                  flexShrink: 0,
+                  gap: '4px'
                 }}>
-                  <span style={{ fontSize: '12px', fontWeight: '700', color: headerColor }}>{colTitle}</span>
-                  <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px', backgroundColor: '#ffffff', color: headerColor, border: `1px solid rgba(0,0,0,0.08)` }}>
-                    {columnJobs.length}
-                  </span>
+                  <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: headerColor }}>{colTitle}</span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px', backgroundColor: '#ffffff', color: headerColor, border: `1px solid rgba(0,0,0,0.08)` }}>
+                      {columnJobs.length}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', fontSize: '10px', color: headerColor, opacity: 0.8 }}>
+                    <span>Jobs: {columnJobs.length}</span>
+                    <span>Qty: {columnJobs.reduce((sum, j) => sum + Number(j.quantity || 0), 0)}</span>
+                  </div>
                 </div>
 
                 {/* Column Cards Container — scrollable */}
@@ -1341,52 +1413,38 @@ export default function JobOperations({ user }) {
                   scrollbarColor: 'var(--color-border) transparent'
                 }}>
                   {columnJobs.map(job => (
-                    <div 
-                      key={job.id} 
-                      className="card" 
-                      draggable={true}
-                      onDragStart={(e) => { setHoveredJob(null); handleDragStart(e, job); }}
-                      onMouseEnter={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const viewportW = window.innerWidth;
-                        const popoverW = 300;
-                        // Decide which side to show: right if space, else left
-                        const spaceRight = viewportW - rect.right;
-                        const side = spaceRight >= popoverW + 16 ? 'right' : 'left';
-                        setPopoverPos({
-                          top: Math.min(rect.top, window.innerHeight - 420),
-                          left: side === 'right' ? rect.right + 10 : rect.left - popoverW - 10,
-                          side
-                        });
-                        setHoveredJob(job);
-                      }}
-                      onMouseLeave={() => setHoveredJob(null)}
-                      style={{ 
-                        padding: '10px 12px', 
+                      <div 
+                        key={job.id} 
+                        className="card" 
+                        draggable={true}
+                        onDragStart={(e) => handleDragStart(e, job)}
+                        onClick={() => handleEditJob(job)}
+                        style={{ 
+                        padding: '12px', 
                         display: 'flex', 
                         flexDirection: 'column', 
-                        gap: '6px', 
+                        width: '100%',
+                        height: '140px',
+                        flexShrink: 0,
                         cursor: 'pointer',
                         borderColor: job.status === 'inspection' ? '#d8b4fe' : 'var(--color-border)',
-                        boxShadow: hoveredJob?.id === job.id ? '0 4px 16px rgba(0,0,0,0.10)' : '0 1px 3px rgba(0,0,0,0.03)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                         userSelect: 'none',
                         position: 'relative',
                         overflow: 'hidden',
                         transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
-                        borderLeftWidth: '3px',
+                        borderLeftWidth: '4px',
                         borderLeftColor: job.status === 'pending' ? '#f59e0b'
                           : job.status === 'in_progress' ? '#3b82f6'
                           : job.status === 'inspection' ? '#a855f7'
-                          : '#22c55e'
+                          : '#22c55e',
+                        backgroundColor: '#ffffff'
                       }}
-                      onClick={() => handleViewJobDetails(job)}
                     >
-                      {/* Compact DELIVERED stamp */}
                       {job.status === 'completed' && job.delivery_challan_item && (
                         <div style={{
                           position: 'absolute',
-                          top: '50%', right: '38px',
-                          transform: 'translateY(-50%) rotate(-10deg)',
+                          top: '10px', right: '10px',
                           border: '2px double #16a34a',
                           color: '#16a34a', fontSize: '9px', fontWeight: '900',
                           textTransform: 'uppercase', padding: '1px 5px', borderRadius: '3px',
@@ -1397,43 +1455,46 @@ export default function JobOperations({ user }) {
                         </div>
                       )}
 
-                      {/* Compact card: just job number + tiny meta */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-text-main)', letterSpacing: '0.02em' }}>
-                          {job.job_card_number}
-                        </span>
-                        <ChevronRight size={13} style={{ color: 'var(--color-text-light)', flexShrink: 0 }} />
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px' }}>
-                        <span style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                          <User size={9} />
-                          {job.worker ? job.worker.name.split(' ')[0] : <em style={{ color: 'var(--color-danger)' }}>Unassigned</em>}
-                        </span>
-                        <span style={{ fontWeight: '700', color: 'var(--color-primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-text-main)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>
+                            {job.job_card_number}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>
+                            PO: {job.po_item?.purchase_order?.po_number || 'N/A'}
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: '700', color: 'var(--color-primary)', fontSize: '12px' }}>
                           {job.quantity} {job.po_item?.unit || 'PC'}
-                        </span>
+                        </div>
                       </div>
 
-                      {/* QC Action buttons */}
-                      {job.status === 'inspection' && (
-                        <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }} onClick={e => e.stopPropagation()}>
-                          <button 
-                            onClick={(e) => handleQuickStatusUpdate(e, job.id, 'completed', 'Approved by manager inspection')}
-                            className="form-button"
-                            style={{ flex: 1, marginTop: 0, padding: '3px 6px', fontSize: '10px', height: '22px', backgroundColor: 'var(--color-success)' }}
-                          >
-                            Pass QC
-                          </button>
-                          <button 
-                            onClick={(e) => handleQuickStatusUpdate(e, job.id, 'in_progress', 'Failed QC check, returned for rework')}
-                            className="form-button"
-                            style={{ flex: 1, marginTop: 0, padding: '3px 6px', fontSize: '10px', height: '22px', backgroundColor: 'var(--color-danger)' }}
-                          >
-                            Rework
-                          </button>
+                      <div style={{ flexGrow: 1, fontSize: '11px', color: 'var(--color-text-light)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {job.po_item?.description || 'No Description'}
+                      </div>
+
+                      {/* Timer Display */}
+                      {job.status === 'in_progress' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#2563eb', marginBottom: '6px' }}>
+                          <Clock size={12} /> <LiveTimer startTime={job.machining_started_at} accumulated={job.machining_duration_seconds} />
                         </div>
                       )}
+                      {(job.status === 'completed' || job.status === 'inspection') && job.machining_duration_seconds > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '600', color: 'var(--color-text-muted)', marginBottom: '6px' }}>
+                          <Check size={12} /> {formatDuration(job.machining_duration_seconds)}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--color-border)', fontSize: '11px' }}>
+                        <span style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>
+                          <User size={12} />
+                          {job.worker ? job.worker.name.split(' ')[0] : <em style={{ color: 'var(--color-danger)' }}>Unassigned</em>}
+                        </span>
+                        <span style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>
+                          <Cpu size={12} />
+                          {job.machine ? job.machine.machine_code : <em style={{ color: 'var(--color-danger)' }}>Unassigned</em>}
+                        </span>
+                      </div>
                     </div>
                   ))}
                   {columnJobs.length === 0 && (
@@ -1461,132 +1522,73 @@ export default function JobOperations({ user }) {
         </div>
       )}
 
-      {/* ── Hover Popover ── */}
-      {hoveredJob && (
-        <div
-          onMouseEnter={() => setHoveredJob(hoveredJob)}
-          onMouseLeave={() => setHoveredJob(null)}
-          style={{
-            position: 'fixed',
-            top: popoverPos.top,
-            left: popoverPos.left,
-            width: '300px',
-            zIndex: 9999,
-            backgroundColor: 'var(--color-card-bg)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '12px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.20), 0 4px 16px rgba(0,0,0,0.10)',
-            overflow: 'hidden',
-            animation: 'popoverSlideIn 0.15s ease-out',
-            pointerEvents: 'none'
-          }}
-        >
-          <style>{`
-            @keyframes popoverSlideIn {
-              from { opacity: 0; transform: scale(0.96) translateY(-4px); }
-              to   { opacity: 1; transform: scale(1)   translateY(0); }
-            }
-          `}</style>
+      {/* ── Job Details Drawer ── */}
+      {viewingJob && (
+        <>
+          <div 
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 999 }}
+            onClick={() => setViewingJob(null)}
+          />
+          <div 
+            className="animate-slide-in-right"
+            style={{ 
+              position: 'fixed', top: 0, right: 0, width: '450px', height: '100vh', 
+              backgroundColor: '#ffffff', zIndex: 1000, boxShadow: '-4px 0 24px rgba(0,0,0,0.15)',
+              display: 'flex', flexDirection: 'column', overflowY: 'auto'
+            }}
+          >
+            <div style={{ padding: '20px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc' }}>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: '800', marginBottom: '4px' }}>{viewingJob.job_card_number}</h2>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>PO: {viewingJob.po_item?.purchase_order?.po_number}</div>
+              </div>
+              <button onClick={() => setViewingJob(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <X size={20} color="var(--color-text-muted)" />
+              </button>
+            </div>
+            
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              <div style={{ backgroundColor: 'var(--color-bg-base)', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Part Details</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-main)', marginBottom: '4px' }}>{viewingJob.po_item?.description || 'N/A'}</div>
+                <div style={{ fontSize: '13px', color: 'var(--color-primary)', fontWeight: '700' }}>Target Qty: {viewingJob.quantity} {viewingJob.po_item?.unit || 'PC'}</div>
+              </div>
 
-          {/* Popover colour header */}
-          {(() => {
-            const s = getStatusBadgeStyles(hoveredJob.status, !!hoveredJob.delivery_challan_item);
-            return (
-              <div style={{
-                padding: '12px 16px',
-                background: `linear-gradient(135deg, ${s.bg}, ${s.border}30)`,
-                borderBottom: `2px solid ${s.border}`,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-              }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '800', color: s.text, letterSpacing: '0.02em' }}>
-                    {hoveredJob.job_card_number}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ backgroundColor: '#f0fdf4', padding: '12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#166534', textTransform: 'uppercase', marginBottom: '4px' }}>Operator</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#14532d' }}>{viewingJob.worker?.name || 'Unassigned'}</div>
+                </div>
+                <div style={{ backgroundColor: '#eff6ff', padding: '12px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#1e40af', textTransform: 'uppercase', marginBottom: '4px' }}>Machine</div>
+                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e3a8a' }}>{viewingJob.machine?.machine_code || 'Unassigned'}</div>
+                </div>
+              </div>
+
+              <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '12px' }}>Production Timer</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '24px', fontWeight: '800', color: viewingJob.status === 'in_progress' ? '#2563eb' : 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace' }}>
+                    <Clock size={20} />
+                    <LiveTimer startTime={viewingJob.status === 'in_progress' ? viewingJob.machining_started_at : null} accumulated={viewingJob.machining_duration_seconds} />
                   </div>
-                  <div style={{ fontSize: '10px', fontWeight: '600', color: s.text, opacity: 0.7, marginTop: '2px' }}>
-                    {s.label}
+                  <div style={{ fontSize: '12px', fontWeight: '600', padding: '4px 10px', borderRadius: '20px', backgroundColor: viewingJob.status === 'in_progress' ? '#dbeafe' : '#f1f5f9', color: viewingJob.status === 'in_progress' ? '#1e40af' : '#475569' }}>
+                    {viewingJob.status === 'in_progress' ? 'Running' : 'Stopped'}
                   </div>
                 </div>
-                <span style={{
-                  fontSize: '18px', fontWeight: '900', color: s.text,
-                  backgroundColor: 'rgba(255,255,255,0.6)',
-                  padding: '4px 10px', borderRadius: '8px', letterSpacing: '0.02em'
-                }}>
-                  {hoveredJob.quantity} {hoveredJob.po_item?.unit || 'PC'}
-                </span>
               </div>
-            );
-          })()}
 
-          {/* Popover body */}
-          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-
-            {/* PO + Item */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Purchase Order</div>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-text-main)', fontFamily: 'monospace' }}>#{hoveredJob.po_item?.purchase_order?.po_number}</div>
-              </div>
-              <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Item Code</div>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-text-main)', fontFamily: 'monospace' }}>{hoveredJob.po_item?.item_code || '—'}</div>
-              </div>
-            </div>
-
-            {/* Description */}
-            {hoveredJob.po_item?.description && (
-              <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Description</div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-main)', lineHeight: '1.5', wordBreak: 'break-word' }}>
-                  {hoveredJob.po_item.description}
-                </div>
-              </div>
-            )}
-
-            {/* Worker + Machine */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Operator</div>
-                <div style={{ fontSize: '12px', fontWeight: '600', color: hoveredJob.worker ? 'var(--color-text-main)' : 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <User size={11} />
-                  {hoveredJob.worker ? hoveredJob.worker.name : 'Unassigned'}
-                </div>
-              </div>
-              <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', padding: '8px 10px' }}>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Machine</div>
-                <div style={{ fontSize: '12px', fontWeight: '600', color: hoveredJob.machine ? 'var(--color-text-main)' : 'var(--color-text-light)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Cpu size={11} />
-                  {hoveredJob.machine ? hoveredJob.machine.machine_code : 'None'}
-                </div>
-              </div>
-            </div>
-
-            {/* Drawings + Remarks */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              {hoveredJob.drawing_path && hoveredJob.drawing_path.length > 0 && (
-                <span style={{
-                  fontSize: '10px', fontWeight: '700',
-                  color: 'var(--color-primary)', backgroundColor: 'var(--color-primary-light)',
-                  padding: '3px 8px', borderRadius: '6px',
-                  border: '1px solid rgba(37,99,235,0.12)',
-                  display: 'flex', alignItems: 'center', gap: '4px'
-                }}>
-                  <FileText size={10} />
-                  {hoveredJob.drawing_path.length} Drawing{hoveredJob.drawing_path.length > 1 ? 's' : ''}
-                </span>
-              )}
-              {hoveredJob.remarks && (
-                <span style={{ fontSize: '10px', color: 'var(--color-text-muted)', fontStyle: 'italic', flex: 1 }}>
-                  "{hoveredJob.remarks.substring(0, 60)}{hoveredJob.remarks.length > 60 ? '…' : ''}"
-                </span>
-              )}
-            </div>
-
-            {/* Footer hint */}
-            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '8px', textAlign: 'center' }}>
-              <span style={{ fontSize: '10px', color: 'var(--color-text-light)' }}>Click card to open full details</span>
+              <button 
+                onClick={() => handleEditJob(viewingJob)}
+                className="form-button"
+                style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', backgroundColor: 'var(--color-primary)', fontSize: '14px' }}
+              >
+                <Plus size={16} /> Open Full Execution View
+              </button>
             </div>
           </div>
-        </div>
+        </>
       )}
 
     </div>

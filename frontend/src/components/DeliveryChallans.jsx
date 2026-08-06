@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
@@ -20,9 +20,32 @@ import {
   XCircle,
   Download,
   Save,
-  X
+  X,
+  ChevronDown
 } from 'lucide-react';
 import { useRealTime } from '../hooks/useRealTime';
+
+function formatPoNumbers(poOrders) {
+  if (!poOrders || poOrders.length === 0) return 'N/A';
+  
+  const poNumbers = Array.from(new Set(poOrders.map(po => po.po_number).filter(Boolean)));
+  if (poNumbers.length === 0) return 'N/A';
+  if (poNumbers.length === 1) return poNumbers[0];
+
+  const allLongEnough = poNumbers.every(num => num && num.length >= 5);
+  if (allLongEnough) {
+    const prefixes = poNumbers.map(num => num.slice(0, -4));
+    const firstPrefix = prefixes[0];
+    const allSamePrefix = prefixes.every(pref => pref === firstPrefix);
+
+    if (allSamePrefix) {
+      const suffixes = poNumbers.slice(1).map(num => num.slice(-4));
+      return `${poNumbers[0]} / ${suffixes.join(' / ')}`;
+    }
+  }
+
+  return poNumbers.join(' / ');
+}
 
 export default function DeliveryChallans() {
   const navigate = useNavigate();
@@ -42,7 +65,10 @@ export default function DeliveryChallans() {
   const [feedback, setFeedback] = useState(null);
   
   // Form State
-  const [selectedPoId, setSelectedPoId] = useState('');
+  const [selectedPoIds, setSelectedPoIds] = useState([]);
+  const [poSearchQuery, setPoSearchQuery] = useState('');
+  const [isPoDropdownOpen, setIsPoDropdownOpen] = useState(false);
+  const poDropdownRef = useRef(null);
   const [challanDate, setChallanDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedJobIds, setSelectedJobIds] = useState([]);
   const [remarks, setRemarks] = useState('');
@@ -74,13 +100,13 @@ export default function DeliveryChallans() {
         
         setCreating(true);
         fetchApprovedPOs();
-        setSelectedPoId(prefilledPoId.toString());
+        setSelectedPoIds([prefilledPoId.toString()]);
         setSelectedInvoiceId(prefilledInvoiceId);
         setRemarks(`Generated from Invoice`);
         
         setJobsLoading(true);
         const token = localStorage.getItem('auth_token');
-        axios.get(`http://127.0.0.1:8000/api/invoices/${prefilledInvoiceId}`, {
+        axios.get(`/api/invoices/${prefilledInvoiceId}`, {
           headers: { Authorization: `Bearer ${token}` }
         }).then(res => {
           setSelectedInvoiceNumber(res.data.invoice_number);
@@ -118,7 +144,7 @@ export default function DeliveryChallans() {
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/delivery-challans', {
+      const response = await axios.get('/api/delivery-challans', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setChallans(response.data);
@@ -134,7 +160,7 @@ export default function DeliveryChallans() {
   const fetchApprovedPOs = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/purchase-orders?status=approved', {
+      const response = await axios.get('/api/purchase-orders?status=approved', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPoList(response.data);
@@ -145,12 +171,21 @@ export default function DeliveryChallans() {
 
   useEffect(() => {
     fetchChallans();
+
+    const handleClickOutside = (event) => {
+      if (poDropdownRef.current && !poDropdownRef.current.contains(event.target)) {
+        setIsPoDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleStartCreate = () => {
     setCreating(true);
     fetchApprovedPOs();
-    setSelectedPoId('');
+    setSelectedPoIds([]);
+    setPoSearchQuery('');
     setSelectedInvoiceId(null);
     setSelectedInvoiceNumber('');
     setCompletedJobs([]);
@@ -163,17 +198,20 @@ export default function DeliveryChallans() {
 
   const handleCancelCreate = () => {
     setCreating(false);
+    setSelectedPoIds([]);
+    setPoSearchQuery('');
     setSelectedInvoiceId(null);
     setSelectedInvoiceNumber('');
     setGenerateInvoice(false);
     setFeedback(null);
   };
 
-  // When PO changes, fetch completed and undelivered job cards
-  const handlePoChange = async (poId) => {
-    setSelectedPoId(poId);
+  // Fetch completed and undelivered job cards for selected PO array
+  const loadPoData = async (poIds) => {
+    setSelectedPoIds(poIds);
     setSelectedJobIds([]);
-    if (!poId) {
+    
+    if (poIds.length === 0) {
       setCompletedJobs([]);
       return;
     }
@@ -181,14 +219,16 @@ export default function DeliveryChallans() {
     setJobsLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
+      const numericPoIds = poIds.map(id => parseInt(id, 10));
+      
       // Fetch completed, undelivered jobs
-      const response = await axios.get('http://127.0.0.1:8000/api/jobs', {
+      const response = await axios.get('/api/jobs', {
         headers: { Authorization: `Bearer ${token}` },
         params: { status: 'completed', undelivered: 1 }
       });
       
-      // Filter jobs belonging to this Purchase Order
-      const filtered = response.data.filter(j => j.po_item?.purchase_order_id === parseInt(poId, 10));
+      // Filter jobs belonging to selected Purchase Orders
+      const filtered = response.data.filter(j => j.po_item && numericPoIds.includes(j.po_item.purchase_order_id));
       setCompletedJobs(filtered);
     } catch (err) {
       console.error(err);
@@ -196,6 +236,30 @@ export default function DeliveryChallans() {
     } finally {
       setJobsLoading(false);
     }
+  };
+
+  const handleSelectPo = (poId) => {
+    if (!poId) return;
+    const po = poList.find(p => p.id.toString() === poId);
+    if (!po) return;
+
+    if (selectedPoIds.includes(poId)) return;
+
+    if (selectedPoIds.length > 0) {
+      const firstPo = poList.find(p => p.id.toString() === selectedPoIds[0]);
+      if (firstPo && firstPo.customer_name !== po.customer_name) {
+        alert('All selected Purchase Orders must belong to the same customer.');
+        return;
+      }
+    }
+
+    const updated = [...selectedPoIds, poId];
+    loadPoData(updated);
+  };
+
+  const handleRemovePo = (poId) => {
+    const updated = selectedPoIds.filter(id => id !== poId);
+    loadPoData(updated);
   };
 
   const handleCheckboxChange = (jobId) => {
@@ -210,8 +274,8 @@ export default function DeliveryChallans() {
 
   const handleSaveChallan = async (e) => {
     e.preventDefault();
-    if (!selectedPoId) {
-      alert('Please select a Purchase Order.');
+    if (selectedPoIds.length === 0) {
+      alert('Please select at least one Purchase Order.');
       return;
     }
     if (selectedJobIds.length === 0) {
@@ -224,7 +288,7 @@ export default function DeliveryChallans() {
 
     const payload = {
       challan_date: challanDate,
-      purchase_order_id: selectedPoId,
+      purchase_order_ids: selectedPoIds,
       job_card_ids: selectedJobIds,
       remarks,
       generate_invoice: generateInvoice
@@ -236,7 +300,7 @@ export default function DeliveryChallans() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post('http://127.0.0.1:8000/api/delivery-challans', payload, {
+      const response = await axios.post('/api/delivery-challans', payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -256,7 +320,7 @@ export default function DeliveryChallans() {
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get(`http://127.0.0.1:8000/api/delivery-challans/${id}`, {
+      const response = await axios.get(`/api/delivery-challans/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setViewingChallan(response.data);
@@ -301,7 +365,7 @@ export default function DeliveryChallans() {
     setJobsLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/jobs', {
+      const response = await axios.get('/api/jobs', {
         headers: { Authorization: `Bearer ${token}` },
         params: { status: 'completed', undelivered: 1 }
       });
@@ -346,7 +410,7 @@ export default function DeliveryChallans() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.put(`http://127.0.0.1:8000/api/delivery-challans/${editingChallan.id}`, payload, {
+      const response = await axios.put(`/api/delivery-challans/${editingChallan.id}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -380,7 +444,7 @@ export default function DeliveryChallans() {
     setSaving(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post(`http://127.0.0.1:8000/api/delivery-challans/${challanId}/cancel`, 
+      const response = await axios.post(`/api/delivery-challans/${challanId}/cancel`, 
         { cancellation_reason: reason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -509,7 +573,7 @@ export default function DeliveryChallans() {
     }
   `;
 
-  const selectedPo = poList.find(p => p.id === parseInt(selectedPoId, 10));
+  const selectedPo = poList.find(p => selectedPoIds.includes(p.id.toString()));
 
   // ==========================================
   // VIEW 1: DETAILED VIEW WITH PRINT PREVIEW
@@ -535,7 +599,11 @@ export default function DeliveryChallans() {
                 )}
               </h2>
               <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                Generated on {new Date(viewingChallan.challan_date).toLocaleDateString()} for PO #{viewingChallan.purchase_order?.po_number}.
+                Generated on {new Date(viewingChallan.challan_date).toLocaleDateString()} for PO #{formatPoNumbers(
+                  viewingChallan.purchase_orders && viewingChallan.purchase_orders.length > 0 
+                    ? viewingChallan.purchase_orders 
+                    : (viewingChallan.purchase_order ? [viewingChallan.purchase_order] : [])
+                )}.
               </p>
             </div>
           </div>
@@ -613,7 +681,11 @@ export default function DeliveryChallans() {
               </div>
               <div>
                 <span style={{ color: 'var(--color-text-muted)', display: 'block', fontSize: '11px' }}>PO Reference</span>
-                <strong>PO #{viewingChallan.purchase_order?.po_number}</strong>
+                <strong>PO #{formatPoNumbers(
+                  viewingChallan.purchase_orders && viewingChallan.purchase_orders.length > 0 
+                    ? viewingChallan.purchase_orders 
+                    : (viewingChallan.purchase_order ? [viewingChallan.purchase_order] : [])
+                )}</strong>
               </div>
               {viewingChallan.invoice ? (
                 <div>
@@ -691,7 +763,11 @@ export default function DeliveryChallans() {
               </div>
               <div style={{ border: '1px solid #cbd5e1', padding: '12px', borderRadius: '4px' }}>
                 <span style={{ fontWeight: '700', color: '#475569', display: 'block', marginBottom: '6px', fontSize: '9px', textTransform: 'uppercase' }}>Order References</span>
-                <strong>Customer PO No:</strong> #{viewingChallan.purchase_order?.po_number}<br />
+                <strong>Customer PO No:</strong> #{formatPoNumbers(
+                  viewingChallan.purchase_orders && viewingChallan.purchase_orders.length > 0 
+                    ? viewingChallan.purchase_orders 
+                    : (viewingChallan.purchase_order ? [viewingChallan.purchase_order] : [])
+                )}<br />
                 <strong>PO Date:</strong> {viewingChallan.purchase_order?.po_date ? new Date(viewingChallan.purchase_order.po_date).toLocaleDateString() : 'N/A'}<br />
                 <strong>Mode of Dispatch:</strong> Road / Hand Delivery
               </div>
@@ -1028,19 +1104,134 @@ export default function DeliveryChallans() {
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div className="form-group">
-                <label className="form-label"><User size={12} /> Select Purchase Order</label>
-                <CustomSelect
-                  value={selectedPoId}
-                  onChange={(val) => handlePoChange(val)}
-                  placeholder="-- Choose Approved PO --"
-                  options={poList.map(po => ({
-                    value: po.id.toString(), // ensuring match since selectedPoId is string
-                    label: `PO #${po.po_number} (${po.customer_name})`
-                  }))}
-                  icon={<User size={14} style={{ color: 'var(--color-text-light)' }} />}
-                  disabled={selectedInvoiceId !== null}
-                />
+              <div className="form-group" style={{ position: 'relative' }} ref={poDropdownRef}>
+                <label className="form-label"><User size={12} /> Select Purchase Order(s)</label>
+                {!selectedInvoiceId ? (
+                  <>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Search & select PO..."
+                        value={poSearchQuery}
+                        onChange={(e) => {
+                          setPoSearchQuery(e.target.value);
+                          setIsPoDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsPoDropdownOpen(true)}
+                        style={{ paddingLeft: '12px', paddingRight: '30px', height: '38px' }}
+                      />
+                      <ChevronDown 
+                        size={16} 
+                        style={{ position: 'absolute', right: '10px', color: 'var(--color-text-muted)', cursor: 'pointer' }}
+                        onClick={() => setIsPoDropdownOpen(!isPoDropdownOpen)}
+                      />
+                    </div>
+                    {isPoDropdownOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: 'var(--color-card-bg)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 'var(--radius-md)',
+                        boxShadow: 'var(--shadow-lg)',
+                        zIndex: 100,
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        marginTop: '4px'
+                      }}>
+                        {poList
+                          .filter(po => {
+                            const term = poSearchQuery.toLowerCase();
+                            return (
+                              po.po_number.toLowerCase().includes(term) ||
+                              po.customer_name.toLowerCase().includes(term)
+                            );
+                          })
+                          .map(po => {
+                            const isSelected = selectedPoIds.includes(po.id.toString());
+                            return (
+                              <div
+                                key={po.id}
+                                onClick={() => {
+                                  if (!isSelected) {
+                                    handleSelectPo(po.id.toString());
+                                  }
+                                  setIsPoDropdownOpen(false);
+                                  setPoSearchQuery('');
+                                }}
+                                style={{
+                                  padding: '8px 12px',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  backgroundColor: isSelected ? 'var(--color-bg-base)' : 'transparent',
+                                  opacity: isSelected ? 0.6 : 1,
+                                  borderBottom: '1px solid var(--color-border-light)',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <span>PO #{po.po_number} - {po.customer_name}</span>
+                                {isSelected && <span style={{ color: 'var(--color-success)', fontSize: '11px', fontWeight: 'bold' }}>Selected</span>}
+                              </div>
+                            );
+                          })}
+                        {poList.length === 0 && (
+                          <div style={{ padding: '8px 12px', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                            No approved POs found.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={selectedPo ? `PO #${selectedPo.po_number} (${selectedPo.customer_name})` : ''}
+                    disabled
+                    style={{ paddingLeft: '12px', backgroundColor: 'var(--color-bg-base)', cursor: 'not-allowed', height: '38px' }}
+                  />
+                )}
+                {selectedPoIds.length > 0 && !selectedInvoiceId && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--color-text-muted)' }}>
+                      Selected Purchase Orders ({selectedPoIds.length}):
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {selectedPoIds.map(poId => {
+                        const po = poList.find(p => p.id.toString() === poId);
+                        if (!po) return null;
+                        return (
+                          <div 
+                            key={poId} 
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              backgroundColor: 'var(--color-bg-base)',
+                              border: '1px solid var(--color-border)',
+                              borderRadius: '16px',
+                              padding: '4px 10px',
+                              fontSize: '12px',
+                              fontWeight: '500'
+                            }}
+                          >
+                            <span>PO #{po.po_number}</span>
+                            <X 
+                              size={12} 
+                              style={{ cursor: 'pointer', color: 'var(--color-danger)' }}
+                              onClick={() => handleRemovePo(poId)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -1091,13 +1282,13 @@ export default function DeliveryChallans() {
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
                   <Loader2 size={20} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
                 </div>
-              ) : !selectedPoId ? (
+              ) : selectedPoIds.length === 0 ? (
                 <div style={{ padding: '20px', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
                   Please select a Purchase Order above first to view completed Job Cards.
                 </div>
               ) : completedJobs.length === 0 ? (
                 <div style={{ padding: '20px', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-                  No completed and undelivered Job Cards found for this Purchase Order.
+                  No completed and undelivered Job Cards found for the selected Purchase Orders.
                 </div>
               ) : (
                 <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
@@ -1135,7 +1326,21 @@ export default function DeliveryChallans() {
                               disabled={selectedInvoiceId !== null}
                             />
                           </td>
-                          <td style={{ padding: '10px', fontWeight: '600' }}>{job.job_card_number}</td>
+                          <td style={{ padding: '10px', fontWeight: '600' }}>
+                            {job.job_card_number}
+                            <span style={{ 
+                              marginLeft: '8px', 
+                              fontSize: '10px', 
+                              backgroundColor: 'var(--color-bg-base)', 
+                              padding: '2px 6px', 
+                              borderRadius: '4px', 
+                              border: '1px solid var(--color-border)', 
+                              color: 'var(--color-text-muted)',
+                              fontWeight: '500'
+                            }}>
+                              PO: #{job.po_item?.purchase_order?.po_number}
+                            </span>
+                          </td>
                           <td style={{ padding: '10px', fontWeight: '500' }}>{job.po_item?.item_code}</td>
                           <td style={{ padding: '10px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
                             {(job.po_item?.description || '').split('\n')[0].substring(0, 30)}
@@ -1310,7 +1515,13 @@ export default function DeliveryChallans() {
                     </div>
                   </td>
                   <td style={{ padding: '16px' }}>{new Date(ch.challan_date).toLocaleDateString()}</td>
-                  <td style={{ padding: '16px', fontWeight: '500' }}>PO #{ch.purchase_order?.po_number}</td>
+                  <td style={{ padding: '16px', fontWeight: '500' }}>
+                    PO #{formatPoNumbers(
+                      ch.purchase_orders && ch.purchase_orders.length > 0 
+                        ? ch.purchase_orders 
+                        : (ch.purchase_order ? [ch.purchase_order] : [])
+                    )}
+                  </td>
                   <td style={{ padding: '16px' }}>{ch.purchase_order?.customer_name}</td>
                   <td style={{ padding: '16px' }}>{ch.items_count} items</td>
                   <td style={{ padding: '16px' }}>

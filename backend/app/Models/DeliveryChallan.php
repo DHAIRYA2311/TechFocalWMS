@@ -4,11 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\LogsActivity;
 use App\Traits\BroadcastsUpdates;
+
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class DeliveryChallan extends Model
 {
-    use HasFactory, BroadcastsUpdates;
+    use HasFactory, SoftDeletes, BroadcastsUpdates;
+    use LogsActivity;
 
     protected $fillable = [
         'challan_number',
@@ -34,5 +38,13 @@ class DeliveryChallan extends Model
     public function items()
     {
         return $this->hasMany(DeliveryChallanItem::class, 'delivery_challan_id');
+    }
+
+    /**
+     * Relationship to Purchase Orders (Many-to-Many).
+     */
+    public function purchaseOrders()
+    {
+        return $this->belongsToMany(PurchaseOrder::class, 'purchase_order_delivery_challan');
     }
 }

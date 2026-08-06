@@ -20,7 +20,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useRealTime } from '@/hooks/useRealTime';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
 import * as ImagePicker from 'expo-image-picker';
+import TechFocalLoader from '@/components/tech-focal-loader';
+import { offlinePost } from '@/utils/offlineApi';
+
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -152,9 +156,9 @@ export default function ChallansScreen() {
       const headers = { Authorization: `Bearer ${token}` };
       
       const [incomingRes, deliveryRes, meRes] = await Promise.all([
-        axios.get(`${apiUrl}/api/incoming-challans`, { headers }),
-        axios.get(`${apiUrl}/api/delivery-challans`, { headers }),
-        axios.get(`${apiUrl}/api/me`, { headers }).catch(() => null)
+        offlineGet(`${apiUrl}/api/incoming-challans`, { headers }),
+        offlineGet(`${apiUrl}/api/delivery-challans`, { headers }),
+        offlineGet(`${apiUrl}/api/me`, { headers }).catch(() => null)
       ]);
 
       setIncomingChallans(incomingRes.data);
@@ -175,7 +179,7 @@ export default function ChallansScreen() {
     setLoadingPOs(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/purchase-orders?status=approved`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/purchase-orders?status=approved`, { headers });
       setApprovedPOs(response.data || []);
     } catch (err) {
       console.error('Failed to fetch approved POs:', err);
@@ -287,7 +291,7 @@ export default function ChallansScreen() {
     setLoadingPoDetails(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/purchase-orders/${poId}`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/purchase-orders/${poId}`, { headers });
       const poDetails = response.data;
       setSelectedPoDetails(poDetails);
       
@@ -376,7 +380,7 @@ export default function ChallansScreen() {
         items: itemsPayload
       };
 
-      await axios.post(`${apiUrl}/api/incoming-challans`, payload, { headers });
+      await offlinePost(`${apiUrl}/api/incoming-challans`, payload);
       Alert.alert('Success', 'Incoming Challan logged successfully. Job cards created.');
       setShowAddIncomingModal(false);
       fetchData();
@@ -396,7 +400,7 @@ export default function ChallansScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/incoming-challans/${id}`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/incoming-challans/${id}`, { headers });
       setSelectedIncoming(response.data);
     } catch (err) {
       console.warn('Failed to refresh incoming details:', err);
@@ -407,7 +411,7 @@ export default function ChallansScreen() {
     if (!token || !apiUrl) return;
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${apiUrl}/api/delivery-challans/${id}`, { headers });
+      const response = await offlineGet(`${apiUrl}/api/delivery-challans/${id}`, { headers });
       setSelectedDelivery(response.data);
     } catch (err) {
       console.warn('Failed to refresh delivery details:', err);
@@ -432,7 +436,7 @@ export default function ChallansScreen() {
     setLoadingDetails(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`${apiUrl}/api/incoming-challans/${challan.id}`, { headers });
+      const res = await offlineGet(`${apiUrl}/api/incoming-challans/${challan.id}`, { headers });
       setSelectedIncoming(res.data);
     } catch (err) {
       console.error('Failed to load incoming details:', err);
@@ -448,7 +452,7 @@ export default function ChallansScreen() {
     setLoadingDetails(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const res = await axios.get(`${apiUrl}/api/delivery-challans/${challan.id}`, { headers });
+      const res = await offlineGet(`${apiUrl}/api/delivery-challans/${challan.id}`, { headers });
       setSelectedDelivery(res.data);
     } catch (err) {
       console.error('Failed to load delivery details:', err);
@@ -576,8 +580,7 @@ export default function ChallansScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {loading && (activeTab === 'incoming' ? incomingChallans.length === 0 : deliveryChallans.length === 0) ? (
           <View style={styles.centerSpinner}>
-            <ActivityIndicator size="large" color="#2563eb" />
-            <Text style={styles.spinnerText}>Fetching company challan records...</Text>
+            <TechFocalLoader />
           </View>
         ) : activeTab === 'incoming' ? (
           filteredIncoming.length === 0 ? (
@@ -1843,3 +1846,4 @@ const styles = StyleSheet.create({
     color: '#475569',
   }
 });
+

@@ -10,7 +10,9 @@ import {
   Alert,
   Dimensions,
   StatusBar,
-  Animated
+  Animated,
+  Modal,
+  Image
 } from 'react-native';
 import axios from 'axios';
 import { useRouter } from 'expo-router';
@@ -18,6 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
 import * as Lucide from 'lucide-react-native';
+import { offlineGet } from '@/utils/offlineApi';
+import TechFocalLoader from '@/components/tech-focal-loader';
 
 const ArrowLeft = Lucide.ArrowLeft as any;
 const Search = Lucide.Search as any;
@@ -34,6 +38,7 @@ const Sparkles = Lucide.Sparkles as any;
 const ChevronLeft = Lucide.ChevronLeft as any;
 const ChevronRight = Lucide.ChevronRight as any;
 const Lock = Lucide.Lock as any;
+const X = Lucide.X as any;
 
 const { width } = Dimensions.get('window');
 
@@ -79,6 +84,11 @@ export default function StaffsScreen() {
   const [salaryHistory, setSalaryHistory] = useState<any>(null);
   const [loadingSalary, setLoadingSalary] = useState(false);
 
+  // Edit State
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', shift: '', extra_notes: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Flip Animation State
   const [isFlipped, setIsFlipped] = useState(false);
   const flipAnim = React.useRef(new Animated.Value(0)).current;
@@ -91,8 +101,8 @@ export default function StaffsScreen() {
       const headers = { Authorization: `Bearer ${token}` };
       
       const [meRes, usersRes] = await Promise.all([
-        axios.get(`${apiUrl}/api/me`, { headers }),
-        axios.get(`${apiUrl}/api/users`, { headers })
+        offlineGet(`${apiUrl}/api/me`, { headers }),
+        offlineGet(`${apiUrl}/api/users`, { headers })
       ]);
 
       setCurrentUser(meRes.data.user);
@@ -117,13 +127,13 @@ export default function StaffsScreen() {
 
     if (activeTab === 'progress') {
       setLoadingWork(true);
-      axios.get(`${apiUrl}/api/users/${selectedStaff.id}/stats`, { headers })
+      offlineGet(`${apiUrl}/api/users/${selectedStaff.id}/stats`, { headers })
         .then(res => setWorkStats(res.data))
         .catch(err => console.warn('Failed loading workload stats:', err))
         .finally(() => setLoadingWork(false));
     } else if (activeTab === 'attendance') {
       setLoadingAttendance(true);
-      axios.get(`${apiUrl}/api/users/${selectedStaff.id}/attendance`, {
+      offlineGet(`${apiUrl}/api/users/${selectedStaff.id}/attendance`, {
         headers,
         params: { month: attendanceMonth, year: attendanceYear }
       })
@@ -133,7 +143,7 @@ export default function StaffsScreen() {
     } else if (activeTab === 'salary') {
       if (['admin', 'partner', 'manager'].includes(currentUser?.role)) {
         setLoadingSalary(true);
-        axios.get(`${apiUrl}/api/users/${selectedStaff.id}/salary-history`, { headers })
+        offlineGet(`${apiUrl}/api/users/${selectedStaff.id}/salary-history`, { headers })
           .then(res => setSalaryInfo(res.data)) // wait, setSalaryInfo or setSalaryHistory?
           .catch(err => console.warn('Failed loading salary history:', err))
           .finally(() => setLoadingSalary(false));
@@ -215,6 +225,8 @@ export default function StaffsScreen() {
 
   // Filters
   const filteredStaffs = staffs.filter(s => {
+    if (s.role === 'admin' || s.role === 'partner') return false;
+
     const matchesSearch = 
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -294,8 +306,7 @@ export default function StaffsScreen() {
   if (loading && staffs.length === 0) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading staff directory...</Text>
+        <TechFocalLoader />
       </View>
     );
   }
@@ -377,7 +388,11 @@ export default function StaffsScreen() {
                   <View style={[styles.staffCardAccent, { backgroundColor: theme.color }]} />
                   <View style={styles.staffRow}>
                     <View style={[styles.avatarCircle, { backgroundColor: theme.bg, borderColor: theme.border }]}>
-                      <Text style={[styles.avatarInitials, { color: theme.text }]}>{initials}</Text>
+                      {staff.photo_path ? (
+                        <Image source={{ uri: `${apiUrl}/${staff.photo_path}` }} style={{ width: '100%', height: '100%', borderRadius: 20 }} />
+                      ) : (
+                        <Text style={[styles.avatarInitials, { color: theme.text }]}>{initials}</Text>
+                      )}
                     </View>
                     <View style={styles.staffMeta}>
                       <Text style={styles.staffName}>{staff.name}</Text>
@@ -442,7 +457,11 @@ export default function StaffsScreen() {
       {/* Staff profile summary strip */}
       <View style={styles.profileHeaderCard}>
         <View style={[styles.avatarCircleLarge, { backgroundColor: staffTheme.bg, borderColor: staffTheme.border }]}>
-          <Text style={[styles.avatarInitialsLarge, { color: staffTheme.text }]}>{initials}</Text>
+          {selectedStaff.photo_path ? (
+            <Image source={{ uri: `${apiUrl}/${selectedStaff.photo_path}` }} style={{ width: '100%', height: '100%', borderRadius: 36 }} />
+          ) : (
+            <Text style={[styles.avatarInitialsLarge, { color: staffTheme.text }]}>{initials}</Text>
+          )}
         </View>
         <Text style={styles.profileHeaderName}>{selectedStaff.name}</Text>
         <View style={styles.badgeRow}>
@@ -459,6 +478,88 @@ export default function StaffsScreen() {
           </View>
         </View>
       </View>
+
+      {/* EDIT STAFF MODAL (Custom View) */}
+      {editModalVisible && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999 }]}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { marginTop: insets.top + 50, padding: 0, paddingBottom: 20 }]}>
+            <View style={[styles.modalHeader, { padding: 20, borderBottomWidth: 1, borderColor: '#e2e8f0' }]}>
+              <Text style={styles.modalTitle}>Edit Staff Details</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.closeBtn}>
+                <X size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 20 }}>
+              <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: '600', color: '#64748b' }}>Full Name</Text>
+              <TextInput 
+                style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 14, marginBottom: 16 }}
+                value={editForm.name}
+                onChangeText={v => setEditForm({...editForm, name: v})}
+              />
+              <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: '600', color: '#64748b' }}>Phone Number</Text>
+              <TextInput 
+                style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 14, marginBottom: 16 }}
+                value={editForm.phone}
+                onChangeText={v => setEditForm({...editForm, phone: v})}
+                keyboardType="phone-pad"
+              />
+              <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: '600', color: '#64748b' }}>Working Shift</Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                {['day', 'night'].map(s => (
+                  <TouchableOpacity 
+                    key={s} 
+                    style={{ flex: 1, padding: 14, borderRadius: 8, borderWidth: 1, borderColor: editForm.shift === s ? '#3b82f6' : '#e2e8f0', backgroundColor: editForm.shift === s ? '#eff6ff' : '#f8fafc', alignItems: 'center' }}
+                    onPress={() => setEditForm({...editForm, shift: s})}
+                  >
+                    <Text style={{ textTransform: 'capitalize', color: editForm.shift === s ? '#2563eb' : '#64748b', fontWeight: '600' }}>{s} Shift</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: '600', color: '#64748b' }}>Administrative Remarks</Text>
+              <TextInput 
+                style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 14, marginBottom: 30, height: 100, textAlignVertical: 'top' }}
+                value={editForm.extra_notes}
+                onChangeText={v => setEditForm({...editForm, extra_notes: v})}
+                multiline
+              />
+              <TouchableOpacity 
+                style={{ backgroundColor: '#3b82f6', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 20 }}
+                disabled={savingEdit}
+                onPress={async () => {
+                  setSavingEdit(true);
+                  try {
+                    const res = await axios.put(`${apiUrl}/api/users/${selectedStaff.id}`, {
+                      ...selectedStaff,
+                      name: editForm.name,
+                      phone: editForm.phone,
+                      shift: editForm.shift,
+                      extra_notes: editForm.extra_notes
+                    }, { headers: { Authorization: `Bearer ${token}` } });
+                    
+                    const updatedStaff = res.data.user;
+                    setSelectedStaff(updatedStaff);
+                    setStaffs(staffs.map(s => s.id === updatedStaff.id ? updatedStaff : s));
+                    setEditModalVisible(false);
+                    Alert.alert("Success", "Staff details updated.");
+                  } catch (e: any) {
+                    Alert.alert("Error", e.response?.data?.message || "Failed to update staff details.");
+                  } finally {
+                    setSavingEdit(false);
+                  }
+                }}
+              >
+                {savingEdit ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+        </View>
+      )}
 
       {/* Scrollable Horizontal Sub-tabs */}
       <View style={{ height: 42, borderBottomWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
@@ -534,6 +635,14 @@ export default function StaffsScreen() {
               </View>
             </View>
 
+            <View style={styles.infoGroup}>
+              <Clock size={14} color="#64748b" />
+              <View style={styles.infoMeta}>
+                <Text style={styles.infoLabel}>Assigned Shift</Text>
+                <Text style={[styles.infoValue, { textTransform: 'capitalize' }]}>{selectedStaff.shift || 'General / Not Assigned'}</Text>
+              </View>
+            </View>
+
             <View style={styles.notesContainer}>
               <Text style={styles.notesHeader}>Administrative Remarks</Text>
               <Text style={[
@@ -543,6 +652,23 @@ export default function StaffsScreen() {
                 {selectedStaff.extra_notes || 'No extra performance details configured.'}
               </Text>
             </View>
+
+            {['admin', 'partner', 'manager'].includes(currentUser?.role) && (
+              <TouchableOpacity 
+                style={{ backgroundColor: '#f1f5f9', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 16 }}
+                onPress={() => {
+                  setEditForm({
+                    name: selectedStaff.name,
+                    phone: selectedStaff.phone || '',
+                    shift: selectedStaff.shift || 'day',
+                    extra_notes: selectedStaff.extra_notes || ''
+                  });
+                  setEditModalVisible(true);
+                }}
+              >
+                <Text style={{ color: '#334155', fontWeight: '600' }}>Edit Details</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -741,17 +867,19 @@ export default function StaffsScreen() {
               <Animated.View style={[styles.badgeBaseCard, frontAnimatedStyle, { backfaceVisibility: 'hidden' }]}>
                 {/* Header pattern */}
                 <View style={styles.badgeHeaderBlue}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <MobileLogo height={16} />
-                    <Text style={styles.badgeHeaderTitle}>TECHFOCAL</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                    <Image source={require('../../assets/images/logo_TechFocal.png')} style={{ width: 140, height: 40, resizeMode: 'contain' }} />
                   </View>
-                  <Text style={styles.badgeHeaderSubtitle}>Enterprises LLP</Text>
                 </View>
 
                 {/* Avatar area */}
                 <View style={{ alignItems: 'center', marginTop: 15 }}>
                   <View style={[styles.badgeAvatarCircle, { backgroundColor: staffTheme.bg, borderColor: staffTheme.color }]}>
-                    <Text style={[styles.badgeAvatarInitials, { color: staffTheme.text }]}>{initials}</Text>
+                    {selectedStaff.photo_path ? (
+                      <Image source={{ uri: `${apiUrl}/${selectedStaff.photo_path}` }} style={{ width: '100%', height: '100%', borderRadius: 45 }} />
+                    ) : (
+                      <Text style={[styles.badgeAvatarInitials, { color: staffTheme.text }]}>{initials}</Text>
+                    )}
                   </View>
                 </View>
 
@@ -819,8 +947,7 @@ export default function StaffsScreen() {
               <Animated.View style={[styles.badgeBaseCard, styles.badgeBackCard, backAnimatedStyle, { backfaceVisibility: 'hidden' }]}>
                 {/* Back side branding */}
                 <View style={{ alignItems: 'center', marginTop: 35 }}>
-                  <MobileLogo height={28} />
-                  <Text style={styles.badgeBackCompany}>TechFocal Enterprises</Text>
+                  <Image source={require('../../assets/images/logo_TechFocal.png')} style={{ width: 160, height: 60, resizeMode: 'contain' }} />
                 </View>
 
                 {/* Back side details */}
@@ -1498,5 +1625,35 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+  },
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    justifyContent: 'center',
+    alignItems: 'center',
   }
 });
+

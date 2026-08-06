@@ -106,7 +106,7 @@ export default function ExpenseManagement({ user }) {
       if (filterStartDate) params.start_date = filterStartDate;
       if (filterEndDate) params.end_date = filterEndDate;
 
-      const response = await axios.get('http://127.0.0.1:8000/api/expenses', {
+      const response = await axios.get('/api/expenses', {
         headers: { Authorization: `Bearer ${token}` },
         params
       });
@@ -150,7 +150,7 @@ export default function ExpenseManagement({ user }) {
     if (formData.receipt) data.append('receipt', formData.receipt);
 
     try {
-      await axios.post('http://127.0.0.1:8000/api/expenses', data, {
+      await axios.post('/api/expenses', data, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -201,7 +201,7 @@ export default function ExpenseManagement({ user }) {
     if (!deleteTargetId) return;
     const token = localStorage.getItem('auth_token');
     try {
-      await axios.delete(`http://127.0.0.1:8000/api/expenses/${deleteTargetId}`, {
+      await axios.delete(`/api/expenses/${deleteTargetId}`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { delete_reason: deleteReason || 'Deleted by manager' }
       });
@@ -249,7 +249,7 @@ export default function ExpenseManagement({ user }) {
     if (editFormData.reference_number) data.append('reference_number', editFormData.reference_number);
     if (editFormData.receipt) data.append('receipt', editFormData.receipt);
     try {
-      await axios.post(`http://127.0.0.1:8000/api/expenses/${editingExpense.id}`, data, {
+      await axios.post(`/api/expenses/${editingExpense.id}`, data, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
       });
       setFeedback({ type: 'success', message: 'Expense updated successfully!' });
@@ -671,7 +671,7 @@ export default function ExpenseManagement({ user }) {
                           {/* View Receipt */}
                           {expense.receipt_path && (
                             <a 
-                              href={`http://127.0.0.1:8000/${expense.receipt_path}`} 
+                              href={`${import.meta.env.VITE_API_URL}/${expense.receipt_path}`} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               style={{ 

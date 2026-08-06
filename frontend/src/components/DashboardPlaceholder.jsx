@@ -22,9 +22,11 @@ import {
   Briefcase,
   BarChart3,
   Loader2,
+  Shield,
 } from 'lucide-react';
+import HeaderProfileDropdown from './HeaderProfileDropdown';
 
-export default function DashboardPlaceholder({ user, onLogout }) {
+export default function DashboardPlaceholder({ user, onLogout, onUserUpdated }) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -45,7 +47,7 @@ export default function DashboardPlaceholder({ user, onLogout }) {
     const delayDebounceFn = setTimeout(async () => {
       try {
         const token = localStorage.getItem('auth_token');
-        const response = await axios.get(`http://127.0.0.1:8000/api/search?q=${encodeURIComponent(searchQuery)}`, {
+        const response = await axios.get(`/api/search?q=${encodeURIComponent(searchQuery)}`, {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -75,7 +77,7 @@ export default function DashboardPlaceholder({ user, onLogout }) {
     const token = localStorage.getItem('auth_token');
     
     try {
-      await axios.post('http://127.0.0.1:8000/api/logout', {}, {
+      await axios.post('/api/logout', {}, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -145,6 +147,8 @@ export default function DashboardPlaceholder({ user, onLogout }) {
         case 'branding': breadcrumbs.push('Branding'); break;
         case 'domains': breadcrumbs.push('DNS & Domains'); break;
         case 'documents': breadcrumbs.push('Document Serializations'); break;
+        case 'security': breadcrumbs.push('Security Center'); break;
+        case 'logs': breadcrumbs.push('Audit Logs'); break;
         case 'notifications': breadcrumbs.push('Notification Alerts'); break;
         case 'email': breadcrumbs.push('Email Settings'); break;
         case 'users-roles': breadcrumbs.push('Users & Roles'); break;
@@ -210,14 +214,24 @@ export default function DashboardPlaceholder({ user, onLogout }) {
           )}
           
           {hasPermission('purchase_orders') && (
-            <NavLink 
-              to="/purchase-orders" 
-              className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
-              style={{ textDecoration: 'none' }}
-            >
-              <FileText size={18} />
-              <span>Purchase Orders</span>
-            </NavLink>
+            <>
+              <NavLink 
+                to="/customers" 
+                className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <Users size={18} />
+                <span>Customers</span>
+              </NavLink>
+              <NavLink 
+                to="/purchase-orders" 
+                className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <FileText size={18} />
+                <span>Purchase Orders</span>
+              </NavLink>
+            </>
           )}
 
           {hasPermission('jobs') && (
@@ -349,6 +363,17 @@ export default function DashboardPlaceholder({ user, onLogout }) {
             >
               <Settings size={18} />
               <span>Settings</span>
+            </NavLink>
+          )}
+
+          {user?.role === 'admin' && (
+            <NavLink 
+              to="/security" 
+              className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+              style={{ textDecoration: 'none' }}
+            >
+              <Shield size={18} />
+              <span>Security Center</span>
             </NavLink>
           )}
           
@@ -631,17 +656,15 @@ export default function DashboardPlaceholder({ user, onLogout }) {
             <div style={{ width: '1px', height: '20px', backgroundColor: 'var(--color-border)' }}></div>
             
             {/* User Profile Menu */}
-            <div className="header-user">
-              <div className="user-info">
-                <p className="user-name" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-text-main)' }}>{user?.name || 'User Profile'}</p>
-                <p className="user-role" style={{ fontSize: '11px', color: getRoleThemeColor(user?.role), textTransform: 'capitalize' }}>
-                  {getRoleLabel(user?.role)}
-                </p>
-              </div>
-              <div className="user-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
-                {user?.name ? user.name.split(' ').map(n=>n[0]).join('') : 'U'}
-              </div>
-            </div>
+            <HeaderProfileDropdown 
+              user={user} 
+              onLogout={handleLogout} 
+              onUserUpdated={(updatedUser) => {
+                if (onUserUpdated) {
+                  onUserUpdated(updatedUser);
+                }
+              }} 
+            />
           </div>
         </header>
 

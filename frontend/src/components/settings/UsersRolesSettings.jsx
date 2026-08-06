@@ -60,7 +60,7 @@ export default function UsersRolesSettings() {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.get('http://127.0.0.1:8000/api/settings/permissions', {
+      const response = await axios.get('/api/settings/permissions', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -102,7 +102,7 @@ export default function UsersRolesSettings() {
     setFeedback(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await axios.post('http://127.0.0.1:8000/api/settings/permissions', {
+      const response = await axios.post('/api/settings/permissions', {
         role_permissions: rolePermissions,
         user_permissions: userPermissions
       }, {

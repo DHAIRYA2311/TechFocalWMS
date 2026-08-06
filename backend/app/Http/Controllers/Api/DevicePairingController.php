@@ -63,17 +63,17 @@ class DevicePairingController extends Controller
      */
     public function pair(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'pairing_method' => 'required|string|in:qr,pin',
-            'token' => 'required|string',
-            'device_name' => 'required|string',
-            'device_id' => 'required|string',
+            'token' => 'required|string|max:100',
+            'device_name' => 'required|string|max:255',
+            'device_id' => 'required|string|max:255',
         ]);
 
-        $method = $request->input('pairing_method');
-        $token = $request->input('token');
-        $deviceName = $request->input('device_name');
-        $deviceId = $request->input('device_id');
+        $method = $validated['pairing_method'];
+        $token = $validated['token'];
+        $deviceName = $validated['device_name'];
+        $deviceId = $validated['device_id'];
 
         if ($method === 'qr') {
             $userId = Cache::get("pairing_qr:{$token}");
@@ -113,6 +113,14 @@ class DevicePairingController extends Controller
             Cache::forget("pairing_pin:{$session['pin_code']}");
             Cache::forget($sessionKey);
         }
+
+        \App\Services\PushNotificationService::sendToRoles(
+            ['admin', 'manager'],
+            'New Device Pair 📱',
+            "User {$user->name} paired a new device: {$deviceName}.",
+            'system_device_pair',
+            ['user_id' => $user->id, 'device_id' => $device->id]
+        );
 
         return response()->json([
             'token' => $plainTextToken,
@@ -161,18 +169,18 @@ class DevicePairingController extends Controller
      */
     public function registerPush(Request $request)
     {
-        $request->validate([
-            'device_id' => 'required|string',
-            'push_token' => 'required|string',
+        $validated = $request->validate([
+            'device_id' => 'required|string|max:255',
+            'push_token' => 'required|string|max:1000',
         ]);
 
-        $device = PairedDevice::where('device_id', $request->device_id)->first();
+        $device = PairedDevice::where('device_id', $validated['device_id'])->first();
         if (!$device) {
             return response()->json(['message' => 'Device not found.'], 404);
         }
 
         $device->update([
-            'push_token' => $request->push_token,
+            'push_token' => $validated['push_token'],
         ]);
 
         return response()->json([

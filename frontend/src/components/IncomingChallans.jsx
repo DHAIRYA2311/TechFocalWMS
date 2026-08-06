@@ -51,7 +51,7 @@ export default function IncomingChallans() {
   const fetchChallans = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('http://127.0.0.1:8000/api/incoming-challans');
+      const response = await axios.get('/api/incoming-challans');
       setChallans(response.data);
     } catch (err) {
       console.error(err);
@@ -64,7 +64,7 @@ export default function IncomingChallans() {
   // Fetch approved POs for dropdown
   const fetchApprovedPOs = async () => {
     try {
-      const response = await axios.get('http://127.0.0.1:8000/api/purchase-orders?status=approved');
+      const response = await axios.get('/api/purchase-orders?status=approved');
       setPoList(response.data);
     } catch (err) {
       console.error('Failed to load approved POs', err);
@@ -102,7 +102,7 @@ export default function IncomingChallans() {
     setLoading(true);
     setFeedback(null);
     try {
-      const poRes = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${challan.purchase_order_id}`);
+      const poRes = await axios.get(`/api/purchase-orders/${challan.purchase_order_id}`);
       const po = poRes.data;
       
       setSelectedPo(po);
@@ -173,7 +173,7 @@ export default function IncomingChallans() {
     setFeedback(null);
 
     try {
-      const response = await axios.put(`http://127.0.0.1:8000/api/incoming-challans/${editingChallan.id}`, {
+      const response = await axios.put(`/api/incoming-challans/${editingChallan.id}`, {
         challan_number: challanNo,
         challan_date: challanDate,
         remarks: remarks,
@@ -200,7 +200,7 @@ export default function IncomingChallans() {
     setLoading(true);
     setFeedback(null);
     try {
-      const response = await axios.post(`http://127.0.0.1:8000/api/incoming-challans/${challan.id}/archive`);
+      const response = await axios.post(`/api/incoming-challans/${challan.id}/archive`);
       setFeedback({ type: 'success', message: response.data.message });
       setViewingChallan(null);
       fetchChallans();
@@ -219,7 +219,7 @@ export default function IncomingChallans() {
   const handleDownloadChallan = () => {
     if (viewingChallan.pdf_path) {
       const link = document.createElement('a');
-      const url = `http://127.0.0.1:8000/${viewingChallan.pdf_path}`;
+      const url = `${import.meta.env.VITE_API_URL}/${viewingChallan.pdf_path}`;
       link.href = url;
       link.download = viewingChallan.pdf_path.split('/').pop();
       link.target = '_blank';
@@ -241,7 +241,7 @@ export default function IncomingChallans() {
 
     setLoading(true);
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${poId}`);
+      const response = await axios.get(`/api/purchase-orders/${poId}`);
       setSelectedPo(response.data);
       
       // Initialize items from PO
@@ -275,7 +275,7 @@ export default function IncomingChallans() {
 
     try {
       // 1. Upload and run parse on backend
-      const response = await axios.post('http://127.0.0.1:8000/api/incoming-challans/parse', formData, {
+      const response = await axios.post('/api/incoming-challans/parse', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -291,7 +291,7 @@ export default function IncomingChallans() {
         // Fetch approved list first to ensure dropdown values exist
         await fetchApprovedPOs();
         
-        const poRes = await axios.get(`http://127.0.0.1:8000/api/purchase-orders/${data.purchase_order_id}`);
+        const poRes = await axios.get(`/api/purchase-orders/${data.purchase_order_id}`);
         setSelectedPo(poRes.data);
 
         // Map parsed quantities to PO items
@@ -359,7 +359,7 @@ export default function IncomingChallans() {
     };
 
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/incoming-challans', payload);
+      const response = await axios.post('/api/incoming-challans', payload);
       setFeedback({ type: 'success', message: response.data.message });
       
       setTimeout(() => {
@@ -377,7 +377,7 @@ export default function IncomingChallans() {
   const handleViewChallanDetails = async (challanId) => {
     setLoading(true);
     try {
-      const response = await axios.get(`http://127.0.0.1:8000/api/incoming-challans/${challanId}`);
+      const response = await axios.get(`/api/incoming-challans/${challanId}`);
       setViewingChallan(response.data);
     } catch (err) {
       console.error(err);
@@ -491,14 +491,14 @@ export default function IncomingChallans() {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--color-bg-base)' }}>
               <span style={{ fontSize: '13px', fontWeight: '600' }}>Original Delivery Challan</span>
               {viewingChallan.pdf_path && (
-                <a href={`http://127.0.0.1:8000/${viewingChallan.pdf_path}`} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-primary)' }}>
+                <a href={`${import.meta.env.VITE_API_URL}/${viewingChallan.pdf_path}`} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--color-primary)' }}>
                   Open Full PDF <ExternalLink size={12} />
                 </a>
               )}
             </div>
             <div style={{ flexGrow: 1, backgroundColor: '#525659' }}>
               {viewingChallan.pdf_path ? (
-                <iframe src={`http://127.0.0.1:8000/${viewingChallan.pdf_path}`} width="100%" height="100%" style={{ border: 'none' }} title="Challan Viewer" />
+                <iframe src={`${import.meta.env.VITE_API_URL}/${viewingChallan.pdf_path}`} width="100%" height="100%" style={{ border: 'none' }} title="Challan Viewer" />
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#ffffff' }}>No PDF document attached.</div>
               )}
@@ -677,7 +677,7 @@ export default function IncomingChallans() {
             </div>
             <div style={{ flexGrow: 1, backgroundColor: '#525659', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {pdfPath ? (
-                <iframe src={`http://127.0.0.1:8000/${pdfPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Parsed Challan Viewer" />
+                <iframe src={`${import.meta.env.VITE_API_URL}/${pdfPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Parsed Challan Viewer" />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', color: '#cbd5e1', fontSize: '13px' }}>
                   <FileText size={48} style={{ color: '#94a3b8' }} />
@@ -895,7 +895,7 @@ export default function IncomingChallans() {
             </div>
             <div style={{ flexGrow: 1, backgroundColor: '#525659', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {pdfPath ? (
-                <iframe src={`http://127.0.0.1:8000/${pdfPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Parsed Challan Viewer" />
+                <iframe src={`${import.meta.env.VITE_API_URL}/${pdfPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Parsed Challan Viewer" />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', color: '#cbd5e1', fontSize: '13px' }}>
                   <FileText size={48} style={{ color: '#94a3b8' }} />

@@ -32,7 +32,7 @@ const getEchoInstance = () => {
       wsPort: 6001,
       forceTLS: false,
       disableStats: true,
-      authEndpoint: 'http://127.0.0.1:8000/api/broadcasting/auth',
+      authEndpoint: '/api/broadcasting/auth',
       auth: {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
@@ -94,7 +94,7 @@ const NotificationBell = () => {
     const token = localStorage.getItem('auth_token');
     if (!token) return;
     axios
-      .get('http://127.0.0.1:8000/api/notifications', {
+      .get('/api/notifications', {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((res) => {
@@ -173,7 +173,7 @@ const NotificationBell = () => {
     const token = localStorage.getItem('auth_token');
     try {
       await axios.post(
-        'http://127.0.0.1:8000/api/notifications/mark-read',
+        '/api/notifications/mark-read',
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
