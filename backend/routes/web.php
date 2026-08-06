@@ -32,3 +32,13 @@ Route::get('/verify/{doc_id}', function ($doc_id) {
 
     return view('verify', compact('doc', 'typeLabel', 'doc_id'));
 });
+
+Route::get('/setup-database-demo', function () {
+    if (request('secret') !== 'techfocal2026') {
+        abort(403, 'Unauthorized');
+    }
+    
+    \Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]);
+    return 'Database migrated and seeded successfully! ';
+});
+
