@@ -113,7 +113,7 @@ class ImapService
             }
             
             // Fetch newest first, limit 15
-            $emails = $query->limit(15)->setFetchBody(false)->get();
+            $emails = $query->limit(15)->get();
 
             if ($emails->isEmpty()) {
                 return [
