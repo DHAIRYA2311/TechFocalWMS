@@ -7,11 +7,13 @@ use App\Models\PurchaseOrder;
 use App\Models\PoItem;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Webklex\IMAP\Facades\Client;
+use Webklex\PHPIMAP\ClientManager;
 use Exception;
 
 class ImapService
 {
-    protected $mbox = null;
+    protected $client = null;
     protected $error = '';
 
     /**
@@ -30,37 +32,27 @@ class ImapService
             throw new Exception("IMAP settings are not fully configured in settings.");
         }
 
-        $sslString = '';
-        if ($encryption === 'ssl') {
-            $sslString = '/imap/ssl/novalidate-cert';
-        } elseif ($encryption === 'tls') {
-            $sslString = '/imap/tls/novalidate-cert';
-        } else {
-            $sslString = '/imap/novalidate-cert';
-        }
+        try {
+            $cm = new ClientManager();
+            $this->client = $cm->make([
+                'host'          => $host,
+                'port'          => $port,
+                'encryption'    => $encryption === 'none' ? false : $encryption,
+                'validate_cert' => false,
+                'username'      => $username,
+                'password'      => $password,
+                'protocol'      => 'imap',
+                'options'       => [
+                    'TIMEOUT' => 5,
+                ]
+            ]);
 
-        $connStr = "{" . $host . ":" . $port . $sslString . "}" . $folder;
-
-        // Socket connection pre-check to prevent hanging on unreachable hosts/ports
-        $socketHost = ($encryption === 'ssl') ? 'ssl://' . $host : $host;
-        $socket = @fsockopen($socketHost, (int)$port, $errno, $errstr, 4);
-        if (!$socket) {
-            $this->error = "Mail server port $port is unreachable on host '$host'. Details: $errstr ($errno)";
+            $this->client->connect();
+            return true;
+        } catch (Exception $e) {
+            $this->error = $e->getMessage();
             return false;
         }
-        fclose($socket);
-
-        // Open connection with 5-second timeout
-        imap_timeout(IMAP_OPENTIMEOUT, 5);
-        $this->mbox = @imap_open($connStr, $username, $password);
-
-        if (!$this->mbox) {
-            $errs = imap_errors();
-            $this->error = $errs ? implode('; ', $errs) : 'Connection timed out or failed';
-            return false;
-        }
-
-        return true;
     }
 
     /**
@@ -76,9 +68,13 @@ class ImapService
      */
     public function disconnect()
     {
-        if ($this->mbox) {
-            @imap_close($this->mbox);
-            $this->mbox = null;
+        if ($this->client) {
+            try {
+                $this->client->disconnect();
+            } catch (Exception $e) {
+                // Ignore disconnect errors
+            }
+            $this->client = null;
         }
     }
 
@@ -87,7 +83,7 @@ class ImapService
      */
     public function fetchPurchaseOrders()
     {
-        if (!$this->mbox && !$this->connect()) {
+        if (!$this->client && !$this->connect()) {
             PushNotificationService::sendToRoles(
                 ['admin', 'manager'],
                 'Email Sync Failed ⚠️',
@@ -103,92 +99,73 @@ class ImapService
         $processedEmails = 0;
         $failedEmails = 0;
 
-        // Search for UNSEEN emails matching the subject filter directly
-        $subjectFilter = Setting::getVal('imap_subject_filter');
-        $searchCriteria = 'UNSEEN';
-        if ($subjectFilter) {
-            $searchCriteria .= ' SUBJECT "' . $subjectFilter . '"';
-        }
+        $folderName = Setting::getVal('imap_source_folder', 'INBOX');
 
-        $emails = imap_search($this->mbox, $searchCriteria);
+        try {
+            $folder = $this->client->getFolder($folderName);
+            
+            // Search for UNSEEN emails matching the subject filter directly
+            $subjectFilter = Setting::getVal('imap_subject_filter');
+            
+            $query = $folder->query()->unseen();
+            if ($subjectFilter) {
+                $query->unseen()->subject($subjectFilter);
+            }
+            
+            // Fetch newest first, limit 15
+            $emails = $query->limit(15)->setFetchBody(false)->get();
 
-        if ($emails) {
-            // Process the newest unread messages first and limit to 15 to prevent server timeouts
-            $emails = array_reverse($emails);
-            $emails = array_slice($emails, 0, 15);
-        }
+            if ($emails->isEmpty()) {
+                return [
+                    'processed' => 0,
+                    'failed' => 0,
+                    'message' => 'No new unread emails found.'
+                ];
+            }
 
-        if (!$emails) {
-            return [
-                'processed' => 0,
-                'failed' => 0,
-                'message' => 'No new unread emails found.'
-            ];
-        }
+            $pdfParser = new PdfParserService();
 
-        $pdfParser = new PdfParserService();
+            // Ensure storage directory exists
+            if (!Storage::disk('public')->exists('drawings')) {
+                Storage::disk('public')->makeDirectory('drawings');
+            }
 
-        // Ensure storage directory exists
-        if (!Storage::disk('public')->exists('drawings')) {
-            Storage::disk('public')->makeDirectory('drawings');
-        }
+            foreach ($emails as $message) {
+                try {
+                    $uid = $message->getUid();
 
-        foreach ($emails as $msgNumber) {
-            try {
-                $header = imap_headerinfo($this->mbox, $msgNumber);
-                $uid = imap_uid($this->mbox, $msgNumber);
-
-                // Skip if this message UID has already been imported
-                if (PurchaseOrder::where('email_uid', $uid)->exists()) {
-                    continue;
-                }
-
-                // Filter by Subject keyword if configured
-                $subject = isset($header->subject) ? imap_utf8($header->subject) : '';
-                $subjectFilter = Setting::getVal('imap_subject_filter');
-                if ($subjectFilter && stripos($subject, $subjectFilter) === false) {
-                    continue; // Skip if subject doesn't match the required PO filter
-                }
-
-                $fromInfo = $header->from[0] ?? null;
-                $fromEmail = $fromInfo ? ($fromInfo->mailbox . '@' . $fromInfo->host) : 'unknown@example.com';
-                $fromName = $fromInfo ? (isset($fromInfo->personal) ? imap_utf8($fromInfo->personal) : $fromEmail) : 'Unknown';
-
-                // Fetch email structural parts
-                $structure = imap_fetchstructure($this->mbox, $msgNumber);
-                $attachments = [];
-                $this->getAttachments($msgNumber, $structure, '', $attachments);
-
-                $pdfAttachment = null;
-                foreach ($attachments as $att) {
-                    if (strtolower(pathinfo($att['filename'], PATHINFO_EXTENSION)) === 'pdf') {
-                        $pdfAttachment = $att;
-                        break; // Grab the first PDF attachment
+                    // Skip if this message UID has already been imported
+                    if (PurchaseOrder::where('email_uid', $uid)->exists()) {
+                        continue;
                     }
-                }
 
-                if (!$pdfAttachment) {
-                    continue; // Skip emails that do not contain a PDF PO
-                }
+                    $fromInfo = $message->getFrom()[0] ?? null;
+                    $fromEmail = $fromInfo ? $fromInfo->mail : 'unknown@example.com';
+                    $fromName = $fromInfo ? ($fromInfo->personal ?: $fromEmail) : 'Unknown';
 
-                // Download attachment content
-                $data = imap_fetchbody($this->mbox, $msgNumber, $pdfAttachment['part_num']);
-                
-                // Decode based on encoding type
-                if ($pdfAttachment['encoding'] === 3) { // BASE64
-                    $data = base64_decode($data);
-                } elseif ($pdfAttachment['encoding'] === 4) { // QUOTED-PRINTABLE
-                    $data = quoted_printable_decode($data);
-                }
+                    // Fetch attachments
+                    $pdfAttachment = null;
+                    $attachments = $message->getAttachments();
+                    
+                    foreach ($attachments as $att) {
+                        if (strtolower($att->getExtension()) === 'pdf') {
+                            $pdfAttachment = $att;
+                            break;
+                        }
+                    }
 
-                // Clean file name
-                $cleanFilename = preg_replace('/[^a-zA-Z0-9_.-]/', '', $pdfAttachment['filename']);
-                $fileName = time() . '_' . $cleanFilename;
-                
-                // Write to public storage
-                Storage::disk('public')->put('drawings/' . $fileName, $data);
-                $relativeUrl = 'storage/drawings/' . $fileName;
-                $absolutePath = storage_path('app/public/drawings/' . $fileName);
+                    if (!$pdfAttachment) {
+                        continue; // Skip emails that do not contain a PDF PO
+                    }
+
+                    // Download attachment content
+                    $cleanFilename = preg_replace('/[^a-zA-Z0-9_.-]/', '', $pdfAttachment->getName());
+                    $fileName = time() . '_' . $cleanFilename;
+                    
+                    // Write to public storage
+                    Storage::disk('public')->put('drawings/' . $fileName, $pdfAttachment->getContent());
+                    $relativeUrl = 'storage/drawings/' . $fileName;
+                    $absolutePath = storage_path('app/public/drawings/' . $fileName);
 
                 // Run PDF extraction
                 $parsedData = $pdfParser->parse($absolutePath);
@@ -288,17 +265,20 @@ class ImapService
                 // CATEGORY SHIFT: Move processed email to archive folder on mail server
                 $processedFolder = Setting::getVal('imap_processed_folder');
                 if ($processedFolder) {
-                    @imap_mail_move($this->mbox, "$msgNumber", $processedFolder);
-                    @imap_expunge($this->mbox);
+                    try {
+                        $message->move($processedFolder);
+                    } catch (Exception $e) {
+                        // Ignore move error
+                    }
                 } else {
                     // Mark as read if no folder is configured
-                    @imap_setflag_full($this->mbox, "$msgNumber", "\\Seen");
+                    $message->setFlag('Seen');
                 }
 
                 $processedEmails++;
             } catch (Exception $e) {
                 $failedEmails++;
-                logger()->error("Failed to process email message $msgNumber: " . $e->getMessage());
+                logger()->error("Failed to process email message {$message->getUid()}: " . $e->getMessage());
                 PushNotificationService::sendToRoles(
                     ['admin', 'manager'],
                     'PO Import Failed ❌',
@@ -306,6 +286,10 @@ class ImapService
                     'purchase_order_fail'
                 );
             }
+            }
+        } catch (Exception $e) {
+            $this->error = $e->getMessage();
+            throw new Exception("Could not search IMAP server: " . $this->error);
         }
 
         return [
@@ -313,48 +297,6 @@ class ImapService
             'failed' => $failedEmails,
             'message' => "Email check completed. Imported $processedEmails draft POs ($failedEmails failed)."
         ];
-    }
-
-    /**
-     * Recursively extract parts to find attachments.
-     */
-    protected function getAttachments($msgNumber, $structure, $partNumber, &$attachments)
-    {
-        if (isset($structure->parts)) {
-            foreach ($structure->parts as $index => $subPart) {
-                $prefix = $partNumber ? $partNumber . '.' : '';
-                $this->getAttachments($msgNumber, $subPart, $prefix . ($index + 1), $attachments);
-            }
-        } else {
-            $filename = '';
-            $isAttachment = false;
-
-            if ($structure->ifdparameters) {
-                foreach ($structure->dparameters as $object) {
-                    if (strtolower($object->attribute) === 'filename') {
-                        $filename = $object->value;
-                        $isAttachment = true;
-                    }
-                }
-            }
-
-            if ($structure->ifparameters && !$isAttachment) {
-                foreach ($structure->parameters as $object) {
-                    if (strtolower($object->attribute) === 'name') {
-                        $filename = $object->value;
-                        $isAttachment = true;
-                    }
-                }
-            }
-
-            if ($isAttachment && $filename) {
-                $attachments[] = [
-                    'part_num' => $partNumber ?: '1',
-                    'filename' => $filename,
-                    'encoding' => $structure->encoding
-                ];
-            }
-        }
     }
 
     /**
