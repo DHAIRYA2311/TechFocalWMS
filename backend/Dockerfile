@@ -9,10 +9,11 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     libpq-dev \
+    libzip-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd pdo pdo_mysql pdo_pgsql pcntl
+    && docker-php-ext-install gd pdo pdo_mysql pdo_pgsql pcntl zip
 
 # Enable Apache mod_rewrite
 RUN a2enmod rewrite
