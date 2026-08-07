@@ -59,7 +59,7 @@ export function Nav() {
 
         <div className="flex items-center gap-2">
           <a
-            href="http://localhost:5173/login"
+            href={import.meta.env.VITE_ERP_URL ? `${import.meta.env.VITE_ERP_URL}/login` : "http://localhost:5173/login"}
             className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-4 py-2.5 text-[13px] font-medium text-foreground hover:bg-accent transition-colors"
           >
             <User className="h-3.5 w-3.5" />
@@ -96,7 +96,7 @@ export function Nav() {
               </Link>
             ))}
             <a
-              href="http://localhost:5173/login"
+              href={import.meta.env.VITE_ERP_URL ? `${import.meta.env.VITE_ERP_URL}/login` : "http://localhost:5173/login"}
               className="mt-2 inline-flex items-center justify-center rounded-full border border-border bg-background px-4 py-3 text-sm font-medium"
             >
               <User className="h-4 w-4 mr-1.5" />
