@@ -88,4 +88,20 @@ class SchedulerController extends Controller
             ], 500);
         }
     }
+
+    public function triggerCron(Request $request)
+    {
+        $secret = config('app.cron_secret', env('CRON_SECRET'));
+        if (!$secret || $request->query('secret') !== $secret) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            // Run the scheduler in the background to prevent timing out the webhook request
+            exec('php ' . base_path('artisan') . ' schedule:run > /dev/null 2>&1 &');
+            return response()->json(['message' => 'Scheduler triggered successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to trigger scheduler', 'error' => $e->getMessage()], 500);
+        }
+    }
 }

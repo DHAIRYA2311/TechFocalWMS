@@ -42,6 +42,9 @@ Route::get('/files/download', [FileController::class, 'download'])->name('files.
 Route::get('/maintenance/status', [MaintenanceController::class, 'status']);
 Route::post('/maintenance/verify', [MaintenanceController::class, 'verify']);
 
+// External webhook trigger for cron jobs (Secured by CRON_SECRET)
+Route::get('/cron/trigger', [\App\Http\Controllers\Api\SchedulerController::class, 'triggerCron']);
+
 Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])->group(function () {
     Route::get('/mfa/setup', [\App\Http\Controllers\Api\MfaController::class, 'setup']);
     Route::post('/mfa/setup', [\App\Http\Controllers\Api\MfaController::class, 'verifySetup']);
