@@ -104,12 +104,12 @@ class ImapService
         try {
             $folder = $this->client->getFolder($folderName);
             
-            // Search for UNSEEN emails matching the subject filter directly
+            // Search for recent emails (last 3 days) matching the subject filter directly
             $subjectFilter = Setting::getVal('imap_subject_filter');
             
-            $query = $folder->query()->unseen();
+            $query = $folder->query()->since(now()->subDays(3));
             if ($subjectFilter) {
-                $query->unseen()->subject($subjectFilter);
+                $query->whereSubject($subjectFilter);
             }
             
             // Fetch newest first, limit 15
@@ -119,7 +119,7 @@ class ImapService
                 return [
                     'processed' => 0,
                     'failed' => 0,
-                    'message' => 'No new unread emails found.'
+                    'message' => 'No new emails found.'
                 ];
             }
 
