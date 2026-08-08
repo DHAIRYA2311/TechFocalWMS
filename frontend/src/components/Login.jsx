@@ -108,7 +108,7 @@ export default function Login({ onLoginSuccess }) {
     const credentials = {
       admin: { email: 'admin@techfocal.in', password: 'admin123' },
       partner: { email: 'partner@techfocal.in', password: 'partner123' },
-      manager: { email: 'manager@techfocal.in', password: 'manager123' },
+      manager: { email: 'manager@techfocal.in', password: 'manager@123' }, //For Local Manager@1234 and Production (DEMO) manager@123s
       worker: { email: 'worker@techfocal.in', password: 'worker123' },
     };
 
