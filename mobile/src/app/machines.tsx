@@ -213,6 +213,45 @@ export default function MachinesScreen() {
     setSelectedMachine(null);
   };
 
+  const handleResumeOperations = async () => {
+    if (!selectedMachine || !token || !apiUrl) return;
+    Alert.alert(
+      'Resume Operations',
+      'Are you sure you want to set this machine back to Idle / Available?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Resume',
+          style: 'default',
+          onPress: async () => {
+            setSubmittingLog(true);
+            try {
+              const headers = { Authorization: `Bearer ${token}` };
+              const response = await axios.post(
+                `${apiUrl}/api/machines/${selectedMachine.id}/maintenance`,
+                {
+                  log_type: 'status_override',
+                  description: 'Operations resumed by supervisor.',
+                  cost: null
+                },
+                { headers }
+              );
+              Alert.alert('Success', 'Machine is now back online.');
+              // Refresh details
+              const detailsRes = await offlineGet(`${apiUrl}/api/machines/${selectedMachine.id}`, { headers });
+              setSelectedMachine(detailsRes.data);
+              fetchData();
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.message || 'Failed to resume machine.');
+            } finally {
+              setSubmittingLog(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Submit new activity log
   const handleSubmitLog = async () => {
     if (!selectedMachine || !token || !apiUrl) return;
@@ -641,6 +680,26 @@ export default function MachinesScreen() {
 
                 {/* Maintenance Activity Log Form (Visible to Supervisor/Admins) */}
                 {isSupervisorOrAbove ? (
+                  <>
+                    {selectedMachine.status === 'maintenance' && (
+                      <View style={[styles.modalSectionCard, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', marginBottom: 16 }]}>
+                        <Text style={[styles.formCollapseTitle, { color: '#16a34a', marginBottom: 8 }]}>Machine in Maintenance</Text>
+                        <TouchableOpacity
+                          style={[styles.formSubmitBtn, { backgroundColor: '#16a34a', marginTop: 0 }]}
+                          onPress={handleResumeOperations}
+                          disabled={submittingLog}
+                        >
+                          {submittingLog ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          ) : (
+                            <>
+                              <Play size={16} color="#ffffff" style={{ marginRight: 6 }} />
+                              <Text style={styles.formSubmitBtnText}>Resume Operations (Set to Idle)</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   <View style={styles.modalSectionCard}>
                     <TouchableOpacity 
                       style={styles.formCollapseHeader} 
@@ -729,6 +788,7 @@ export default function MachinesScreen() {
                       </View>
                     )}
                   </View>
+                  </>
                 ) : (
                   <View style={[styles.modalSectionCard, styles.permissionNoticeCard]}>
                     <AlertTriangle size={16} color="#94a3b8" style={{ marginRight: 8 }} />
