@@ -46,6 +46,18 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/sound1.wav",
+            "./assets/sounds/sound2.wav",
+            "./assets/sounds/sound3.wav",
+            "./assets/sounds/sound4.wav",
+            "./assets/sounds/sound5.wav"
+          ]
+        }
+      ],
+      [
         "@sentry/react-native/expo",
         {
           "url": "https://sentry.io/",

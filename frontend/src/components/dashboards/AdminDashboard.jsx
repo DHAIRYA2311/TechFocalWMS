@@ -17,7 +17,7 @@ export default function AdminDashboard({ user, data, jobs }) {
     { title: "Today's Revenue", value: '₹45,200', icon: <IndianRupee size={20} />, change: 'Mocked Financial Data' },
     { title: 'Pending Invoice Amt', value: '₹1.2L', icon: <FileText size={20} />, change: `${data?.modules_data?.invoices?.pending || 0} invoices pending` },
     { title: 'Pending Dispatch', value: data?.kpis?.pending_dispatch || '0', icon: <Truck size={20} />, change: 'Jobs ready for dispatch' },
-    { title: 'Staff Present', value: data?.kpis?.workers_present || '0', icon: <Users size={20} />, change: `${data?.modules_data?.attendance?.absent || 0} absent` },
+    { title: 'Staff Present', value: data?.modules_data?.attendance?.present ?? data?.kpis?.workers_present ?? '0', icon: <Users size={20} />, change: `${data?.modules_data?.attendance?.absent || 0} absent, ${data?.modules_data?.attendance?.pending || 0} pending` },
     { title: 'Quality Rejection %', value: '1.2%', icon: <AlertTriangle size={20} />, change: 'Mocked Quality Data' },
   ];
 

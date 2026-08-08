@@ -23,8 +23,16 @@ class DashboardController extends Controller
         // 1. KPIs
         $attendanceData = DB::table('attendances')
             ->whereDate('date', $today)
-            ->where('status', 'present')
+            ->whereIn('status', ['present', 'late', 'half_day'])
             ->count();
+            
+        $absentData = DB::table('attendances')
+            ->whereDate('date', $today)
+            ->where('status', 'absent')
+            ->count();
+            
+        $totalWorkers = User::where('role', 'worker')->count();
+        $pendingAttendance = max(0, $totalWorkers - ($attendanceData + $absentData));
         
         $activeJobsCount = JobCard::whereIn('status', ['in_progress', 'inspection'])->count();
         $machinesRunning = Machine::whereIn('status', ['running', 'busy'])->count();
@@ -103,7 +111,8 @@ class DashboardController extends Controller
         $modulesData = [
             'attendance' => [
                 'present' => $attendanceData,
-                'absent' => max(0, User::where('role', 'worker')->count() - $attendanceData)
+                'absent' => $absentData,
+                'pending' => $pendingAttendance
             ],
             'jobs' => [
                 'active' => $activeJobsCount,

@@ -14,22 +14,39 @@ Schedule::command('email:fetch-pos')
     ->when(fn() => \App\Models\Setting::getVal('scheduler_email:fetch-pos', '1') === '1');
 
 try {
-    $dayTime = \App\Models\Setting::getVal('notif_attendance_day_time', '10:00');
-    $nightTime = \App\Models\Setting::getVal('notif_attendance_night_time', '22:00');
+    $dayStart = \App\Models\Setting::getVal('att_day_start', '09:00');
+    $nightStart = \App\Models\Setting::getVal('att_night_start', '21:00');
+    $dayGrace = (int) \App\Models\Setting::getVal('att_day_grace_period', 15);
+    $nightGrace = (int) \App\Models\Setting::getVal('att_night_grace_period', 15);
+
+    $dayGraceTime = \Carbon\Carbon::parse($dayStart)->addMinutes($dayGrace)->format('H:i');
+    $nightGraceTime = \Carbon\Carbon::parse($nightStart)->addMinutes($nightGrace)->format('H:i');
 } catch (\Exception $e) {
-    $dayTime = '10:00';
-    $nightTime = '22:00';
+    $dayStart = '09:00';
+    $nightStart = '21:00';
+    $dayGraceTime = '09:15';
+    $nightGraceTime = '21:15';
 }
 
-Schedule::command('attendance:check-reminders day')
-    ->dailyAt($dayTime)
-    ->description('Send Day Shift Attendance Reminders')
-    ->when(fn() => \App\Models\Setting::getVal('scheduler_attendance:check-reminders day', '1') === '1');
+Schedule::command('attendance:check-reminders day start')
+    ->dailyAt($dayStart)
+    ->description('Send Day Shift Start Reminders')
+    ->when(fn() => \App\Models\Setting::getVal('scheduler_attendance:check-reminders', '1') === '1');
 
-Schedule::command('attendance:check-reminders night')
-    ->dailyAt($nightTime)
-    ->description('Send Night Shift Attendance Reminders')
-    ->when(fn() => \App\Models\Setting::getVal('scheduler_attendance:check-reminders night', '1') === '1');
+Schedule::command('attendance:check-reminders day grace')
+    ->dailyAt($dayGraceTime)
+    ->description('Send Day Shift Grace Reminders')
+    ->when(fn() => \App\Models\Setting::getVal('scheduler_attendance:check-reminders', '1') === '1');
+
+Schedule::command('attendance:check-reminders night start')
+    ->dailyAt($nightStart)
+    ->description('Send Night Shift Start Reminders')
+    ->when(fn() => \App\Models\Setting::getVal('scheduler_attendance:check-reminders', '1') === '1');
+
+Schedule::command('attendance:check-reminders night grace')
+    ->dailyAt($nightGraceTime)
+    ->description('Send Night Shift Grace Reminders')
+    ->when(fn() => \App\Models\Setting::getVal('scheduler_attendance:check-reminders', '1') === '1');
 
 Schedule::command('invoices:check-overdue')
     ->dailyAt('09:00')

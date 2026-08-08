@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Save, Loader2, CheckCircle2, AlertCircle, Bell, Clock, ShoppingBag, FileText, Wrench, Package, ServerCrash } from 'lucide-react';
+import { Save, Loader2, CheckCircle2, AlertCircle, Bell, Clock, ShoppingBag, FileText, Wrench, Package, ServerCrash, Music, Play } from 'lucide-react';
 
 export default function NotificationSettings() {
   const { settings, saveSettings, loadingSettings } = useOutletContext();
@@ -30,7 +30,8 @@ export default function NotificationSettings() {
     notif_job_delayed: 'true',
     
     notify_inventory: 'true',
-    notif_email_sync_failed: 'true'
+    notif_email_sync_failed: 'true',
+    push_notification_sound: 'default'
   });
 
   const [saving, setSaving] = useState(false);
@@ -64,7 +65,8 @@ export default function NotificationSettings() {
         notif_job_delayed: settings.notif_job_delayed ?? 'true',
         
         notify_inventory: settings.notify_inventory === '1' ? 'true' : (settings.notify_inventory === '0' ? 'false' : (settings.notify_inventory ?? 'true')),
-        notif_email_sync_failed: settings.notif_email_sync_failed ?? 'true'
+        notif_email_sync_failed: settings.notif_email_sync_failed ?? 'true',
+        push_notification_sound: settings.push_notification_sound || 'default'
       }));
     }
   }, [settings]);
@@ -93,6 +95,15 @@ export default function NotificationSettings() {
       ...prev,
       [key]: prev[key] === 'true' ? 'false' : 'true'
     }));
+  };
+
+  const playPreview = (soundName) => {
+    if (soundName === 'default') {
+      alert("System Default Sound will be played (Cannot preview browser default).");
+      return;
+    }
+    const audio = new Audio(`/sounds/${soundName}`);
+    audio.play().catch(e => console.error("Audio play failed", e));
   };
 
   const renderToggleRow = (key, title, desc, isLast = false) => (
@@ -252,6 +263,45 @@ export default function NotificationSettings() {
             </div>
             <div style={moduleBodyStyle}>
               {renderToggleRow('notif_email_sync_failed', 'Email Sync Failure', 'When the IMAP connection fails or credentials expire.', true)}
+            </div>
+          </div>
+
+          {/* 6. Notification Sounds */}
+          <div style={moduleCardStyle}>
+            <div style={moduleHeaderStyle}>
+              <Music size={16} color="var(--color-primary)" />
+              <h3 style={moduleTitleStyle}>Push Notification Sound</h3>
+            </div>
+            <div style={moduleBodyStyle}>
+              <div style={{ padding: '16px', backgroundColor: '#ffffff' }}>
+                <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '16px' }}>
+                  Select the default sound for mobile push notifications. Make sure the sound is bundled with the mobile app build.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <select 
+                    className="form-input" 
+                    style={{ flex: 1, maxWidth: '300px' }}
+                    value={formData.push_notification_sound}
+                    onChange={(e) => setFormData(prev => ({ ...prev, push_notification_sound: e.target.value }))}
+                  >
+                    <option value="default">System Default</option>
+                    <option value="sound1.wav">Sound 1 (Standard)</option>
+                    <option value="sound2.wav">Sound 2 (High)</option>
+                    <option value="sound3.wav">Sound 3 (Alert)</option>
+                    <option value="sound4.wav">Sound 4 (Chime)</option>
+                    <option value="sound5.wav">Sound 5 (Urgent)</option>
+                  </select>
+                  
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    onClick={() => playPreview(formData.push_notification_sound)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px' }}
+                  >
+                    <Play size={14} /> Preview
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
