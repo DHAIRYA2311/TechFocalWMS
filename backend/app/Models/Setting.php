@@ -48,6 +48,17 @@ class Setting extends Model
             }
         }
 
+        // Do not log routine background setting updates
+        $backgroundKeys = ['po_last_fetch_at'];
+        if (in_array($key, $backgroundKeys)) {
+            return self::withoutEvents(function () use ($key, $value) {
+                return self::updateOrCreate(
+                    ['key' => $key],
+                    ['value' => $value]
+                );
+            });
+        }
+
         return self::updateOrCreate(
             ['key' => $key],
             ['value' => $value]
