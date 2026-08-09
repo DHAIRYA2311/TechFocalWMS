@@ -31,8 +31,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (Throwable $e, Request $request) {
             if ($request->is('api/*')) {
-                if ($e instanceof ValidationException || $e instanceof AuthenticationException) {
+                if ($e instanceof ValidationException) {
                     return null; // Allow default Laravel JSON response for expected client errors
+                }
+                
+                if ($e instanceof AuthenticationException) {
+                    return response()->json(['message' => 'Unauthenticated.'], 401);
                 }
 
                 $statusCode = 500;
