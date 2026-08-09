@@ -230,11 +230,17 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::post('/schedulers/{id}/run', [App\Http\Controllers\Api\SchedulerController::class, 'run']);
 });
 
-Route::get('/logs-backdoor', function () {
-    $logFile = storage_path('logs/laravel.log');
-    if (!file_exists($logFile)) return 'No log file';
-    
-    // Get last 100 lines
-    $lines = file($logFile);
-    return implode('', array_slice($lines, -100));
+Route::get('/logs-backdoor', function (\Illuminate\Http\Request $request) {
+    try {
+        $logs = \App\Models\SecurityAuditLog::with('user:id,name')->orderBy('created_at', 'desc')->get();
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.security_audit', ['logs' => $logs])->setPaper('a4', 'landscape');
+        return $pdf->download('security_audit_report.pdf');
+    } catch (\Throwable $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
 });
