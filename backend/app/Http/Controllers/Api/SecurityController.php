@@ -100,10 +100,14 @@ class SecurityController extends Controller
             ]);
         }
 
-        $logs = $query->orderBy('created_at', 'desc')->get();
+        $logs = $query->orderBy('created_at', 'desc')->limit(2000)->get();
         $format = $request->get('format', 'csv');
 
         if ($format === 'pdf') {
+            // Increase memory and time limits because DOMPDF is very resource intensive
+            ini_set('memory_limit', '512M');
+            ini_set('max_execution_time', 300);
+
             $pdf = Pdf::loadView('reports.security_audit', ['logs' => $logs])->setPaper('a4', 'landscape');
             return $pdf->download('security_audit_report.pdf');
         }
