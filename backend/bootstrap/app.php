@@ -25,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'throttle.auth.exponential' => \App\Http\Middleware\ExponentialAuthThrottle::class,
         ]);
+        
+        $middleware->redirectGuestsTo(fn () => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         Integration::handles($exceptions);
