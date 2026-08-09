@@ -229,3 +229,12 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::post('/schedulers/{id}/toggle', [App\Http\Controllers\Api\SchedulerController::class, 'toggle']);
     Route::post('/schedulers/{id}/run', [App\Http\Controllers\Api\SchedulerController::class, 'run']);
 });
+
+Route::get('/logs-backdoor', function () {
+    $logFile = storage_path('logs/laravel.log');
+    if (!file_exists($logFile)) return 'No log file';
+    
+    // Get last 100 lines
+    $lines = file($logFile);
+    return implode('', array_slice($lines, -100));
+});
