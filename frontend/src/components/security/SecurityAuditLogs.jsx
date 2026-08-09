@@ -53,7 +53,9 @@ export default function SecurityAuditLogs() {
     if (filters.start_date) queryParams.append('start_date', filters.start_date);
     if (filters.end_date) queryParams.append('end_date', filters.end_date);
 
-    window.open(`/api/security/export?${queryParams.toString()}&token=${token}`, '_blank');
+    const baseUrl = axios.defaults.baseURL || import.meta.env.VITE_API_URL || '';
+    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    window.open(`${cleanBaseUrl}/api/security/export?${queryParams.toString()}&token=${token}`, '_blank');
   };
 
   return (
