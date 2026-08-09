@@ -18,7 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->api(append: [
+        $middleware->api(prepend: [
             \App\Http\Middleware\RequireWhitelistedIp::class,
             \App\Http\Middleware\QueryTokenToBearer::class,
         ]);
