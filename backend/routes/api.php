@@ -227,20 +227,4 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     // Schedulers
     Route::get('/schedulers', [App\Http\Controllers\Api\SchedulerController::class, 'index']);
     Route::post('/schedulers/{id}/toggle', [App\Http\Controllers\Api\SchedulerController::class, 'toggle']);
-    Route::post('/schedulers/{id}/run', [App\Http\Controllers\Api\SchedulerController::class, 'run']);
-});
-
-Route::get('/logs-backdoor', function (\Illuminate\Http\Request $request) {
-    try {
-        $logs = \App\Models\SecurityAuditLog::with('user:id,name')->orderBy('created_at', 'desc')->get();
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('reports.security_audit', ['logs' => $logs])->setPaper('a4', 'landscape');
-        return $pdf->download('security_audit_report.pdf');
-    } catch (\Throwable $e) {
-        return response()->json([
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'trace' => $e->getTraceAsString()
-        ]);
-    }
 });
