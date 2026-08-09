@@ -229,11 +229,3 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::post('/schedulers/{id}/toggle', [App\Http\Controllers\Api\SchedulerController::class, 'toggle']);
     Route::post('/schedulers/{id}/run', [App\Http\Controllers\Api\SchedulerController::class, 'run']);
 });
-
-Route::get('/migrate-force-backdoor', function () {
-    \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
-    return response()->json([
-        'message' => 'Migrations run successfully.',
-        'output' => \Illuminate\Support\Facades\Artisan::output()
-    ]);
-});
