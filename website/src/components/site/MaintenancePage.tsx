@@ -163,7 +163,7 @@ export function MaintenancePage({ data, onVerified }: MaintenancePageProps) {
         {data.show_contact && (
           <div className="mt-8 text-center text-[13px] text-muted-foreground animate-in fade-in duration-700 delay-300">
             Need urgent assistance? Reach us at <br />
-            <a href="mailto:contact@techfocal.in" className="text-foreground hover:text-primary transition-colors font-medium">contact@techfocal.in</a>
+            <a href="mailto:amindhairya1@gmail.com" className="text-foreground hover:text-primary transition-colors font-medium">amindhairya1@gmail.com</a>
           </div>
         )}
       </div>
