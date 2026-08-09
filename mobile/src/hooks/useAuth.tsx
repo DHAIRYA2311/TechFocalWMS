@@ -26,7 +26,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { Authorization: `Bearer ${currentToken}` },
         timeout: 10000
       });
-      if (response.data && response.data.user) {
+      if (response.data && response.data.id) {
+        setProfile(response.data);
+        await SecureStore.setItemAsync('user_profile', JSON.stringify(response.data));
+      } else if (response.data && response.data.user) {
         setProfile(response.data.user);
         await SecureStore.setItemAsync('user_profile', JSON.stringify(response.data.user));
       }

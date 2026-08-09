@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Save, Loader2, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import CustomSelect from '../CustomSelect';
+import HolidayCalendar from './HolidayCalendar';
 
 export default function AttendanceSettings() {
   const { settings, saveSettings, loadingSettings } = useOutletContext();
@@ -12,7 +14,8 @@ export default function AttendanceSettings() {
     att_night_shift_start: '21:00',
     att_night_shift_end: '06:00',
     att_night_grace_period: '15',
-    att_night_working_hours: '8'
+    att_night_working_hours: '8',
+    att_weekly_off: 'Sunday'
   });
 
   const [saving, setSaving] = useState(false);
@@ -28,7 +31,8 @@ export default function AttendanceSettings() {
         att_night_shift_start: settings.att_night_shift_start || '21:00',
         att_night_shift_end: settings.att_night_shift_end || '06:00',
         att_night_grace_period: settings.att_night_grace_period || '15',
-        att_night_working_hours: settings.att_night_working_hours || '8'
+        att_night_working_hours: settings.att_night_working_hours || '8',
+        att_weekly_off: settings.att_weekly_off || 'Sunday'
       });
     }
   }, [settings]);
@@ -202,6 +206,35 @@ export default function AttendanceSettings() {
             </div>
           </div>
 
+          {/* General Policies Section */}
+          <div style={{ paddingBottom: '10px' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: '600', color: 'var(--color-text-main)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+              General Policies
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div className="form-group">
+                <label className="form-label">Weekly Off Day</label>
+                <CustomSelect
+                  options={[
+                    { value: 'Sunday', label: 'Sunday' },
+                    { value: 'Monday', label: 'Monday' },
+                    { value: 'Tuesday', label: 'Tuesday' },
+                    { value: 'Wednesday', label: 'Wednesday' },
+                    { value: 'Thursday', label: 'Thursday' },
+                    { value: 'Friday', label: 'Friday' },
+                    { value: 'Saturday', label: 'Saturday' },
+                  ]}
+                  value={formData.att_weekly_off}
+                  onChange={(v) => setFormData({ ...formData, att_weekly_off: v })}
+                />
+                <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                  No attendance will be expected on this day.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--color-border)', paddingTop: '20px', marginTop: '10px' }}>
             <button 
               type="submit" 
@@ -215,6 +248,8 @@ export default function AttendanceSettings() {
           </div>
         </form>
       </div>
+
+      <HolidayCalendar />
     </div>
   );
 }

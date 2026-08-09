@@ -479,6 +479,8 @@ export default function StaffAttendance({ user }) {
                               { value: 'late', label: 'Late' },
                               { value: 'half_day', label: 'Half Day' },
                               { value: 'leave', label: 'Leave' },
+                              { value: 'holiday', label: 'Holiday' },
+                              { value: 'weekly_off', label: 'Weekly Off' },
                             ]}
                             style={{ width: '130px' }}
                           />
@@ -489,7 +491,7 @@ export default function StaffAttendance({ user }) {
                             className="form-input"
                             value={rec.clock_in}
                             onChange={(e) => handleRecordChange(rec.user_id, 'clock_in', e.target.value)}
-                            disabled={['absent', 'leave'].includes(rec.status)}
+                            disabled={['absent', 'leave', 'holiday', 'weekly_off'].includes(rec.status)}
                             style={{ height: '34px', padding: '0 8px', fontSize: '12px' }}
                           />
                         </td>
@@ -499,7 +501,7 @@ export default function StaffAttendance({ user }) {
                             className="form-input"
                             value={rec.clock_out}
                             onChange={(e) => handleRecordChange(rec.user_id, 'clock_out', e.target.value)}
-                            disabled={['absent', 'leave'].includes(rec.status)}
+                            disabled={['absent', 'leave', 'holiday', 'weekly_off'].includes(rec.status)}
                             style={{ height: '34px', padding: '0 8px', fontSize: '12px' }}
                           />
                         </td>
@@ -564,6 +566,8 @@ export default function StaffAttendance({ user }) {
                             else if (statusVal === 'late') { symbol = 'L'; col = '#d97706'; bg = '#fffbeb'; }
                             else if (statusVal === 'half_day') { symbol = 'H'; col = '#ea580c'; bg = '#ffedd5'; }
                             else if (statusVal === 'leave') { symbol = 'V'; col = '#2563eb'; bg = '#eff6ff'; }
+                            else if (statusVal === 'holiday') { symbol = '★'; col = '#8b5cf6'; bg = '#ede9fe'; }
+                            else if (statusVal === 'weekly_off') { symbol = 'W'; col = '#64748b'; bg = '#f1f5f9'; }
 
                             // Render weekend highlight
                             const dayOfWeek = new Date(matrixYear, matrixMonth - 1, day).getDay();
@@ -595,13 +599,15 @@ export default function StaffAttendance({ user }) {
                 </table>
 
                 {/* Legend */}
-                <div style={{ display: 'flex', gap: '16px', fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', gap: '16px', fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '16px', borderTop: '1px solid var(--color-border)', paddingTop: '12px', flexWrap: 'wrap' }}>
                   <span><strong style={{ color: '#059669' }}>P</strong>: Present</span>
                   <span><strong style={{ color: '#dc2626' }}>A</strong>: Absent</span>
                   <span><strong style={{ color: '#d97706' }}>L</strong>: Late Arrival</span>
                   <span><strong style={{ color: '#ea580c' }}>H</strong>: Half Day</span>
                   <span><strong style={{ color: '#2563eb' }}>V</strong>: Leave / Vacation</span>
-                  <span><strong style={{ color: '#94a3b8' }}>-</strong>: Weekend / Not Logged</span>
+                  <span><strong style={{ color: '#8b5cf6' }}>★</strong>: Holiday</span>
+                  <span><strong style={{ color: '#64748b' }}>W</strong>: Weekly Off</span>
+                  <span><strong style={{ color: '#94a3b8' }}>-</strong>: Not Logged</span>
                 </div>
               </div>
             }

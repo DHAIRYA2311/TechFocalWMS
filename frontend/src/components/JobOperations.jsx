@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import CustomSelect from './CustomSelect';
-import { 
-  Wrench, 
-  User, 
-  Cpu, 
-  Play, 
-  CheckCircle, 
-  AlertCircle, 
-  Clock, 
-  Plus, 
-  Filter, 
-  Check, 
+import {
+  Wrench,
+  User,
+  Cpu,
+  Play,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Plus,
+  Filter,
+  Check,
   Info,
   Calendar,
   MessageSquare,
@@ -24,7 +25,9 @@ import {
   Eye,
   List,
   ChevronRight,
-  X
+  X,
+  Package,
+  Layers
 } from 'lucide-react';
 import { useRealTime } from '../hooks/useRealTime';
 
@@ -69,29 +72,36 @@ export default function JobOperations({ user }) {
   const [machines, setMachines] = useState([]);
   const [machinesLoading, setMachinesLoading] = useState(false);
   const [feedback, setFeedback] = useState(null);
-  
+
   // View states
   const [viewMode, setViewMode] = useState(() => {
     return user && ['worker', 'supervisor', 'helper'].includes(user.role) ? 'list' : 'kanban';
   });
   const [viewingJob, setViewingJob] = useState(null); // Selected Job Card object for Drawer view
   const [editingJob, setEditingJob] = useState(null); // Full edit mode
-  
+
   // Assignment & Status Form State (used inside details page)
   const [workerId, setWorkerId] = useState('');
   const [machineId, setMachineId] = useState('');
   const [remarks, setRemarks] = useState('');
   const [savingAssign, setSavingAssign] = useState(false);
-  
+
   // File Upload State
   const [uploadingDrawing, setUploadingDrawing] = useState(false);
   const [selectedPreviewPath, setSelectedPreviewPath] = useState(null);
   const [renamingPath, setRenamingPath] = useState(null);
   const [newName, setNewName] = useState('');
-  
+
   // Filters
   const [filterWorker, setFilterWorker] = useState('');
   const [filterMachine, setFilterMachine] = useState('');
+
+  // Inventory Consumption States
+  const [showConsumeModal, setShowConsumeModal] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [consumptions, setConsumptions] = useState([]);
+  const [consumeData, setConsumeData] = useState({ inventory_item_id: '', quantity: '' });
+  const [consuming, setConsuming] = useState(false);
 
   // Drag & Drop State
   const [dragOverCol, setDragOverCol] = useState(null);
@@ -120,7 +130,7 @@ export default function JobOperations({ user }) {
         params
       });
       setJobs(response.data);
-      
+
       // If we are currently viewing a job, update its local state from the fresh fetch
       if (shouldUpdateViewing && viewingJob) {
         const updated = response.data.find(j => j.id === viewingJob.id);
@@ -194,6 +204,7 @@ export default function JobOperations({ user }) {
     setRemarks(job.remarks || '');
     setSelectedPreviewPath(job.drawing_path && job.drawing_path.length > 0 ? job.drawing_path[0].path : null);
     setFeedback(null);
+    fetchConsumptions(job.id);
   };
 
   const handleEditJob = (job) => {
@@ -204,6 +215,7 @@ export default function JobOperations({ user }) {
     setRemarks(job.remarks || '');
     setSelectedPreviewPath(job.drawing_path && job.drawing_path.length > 0 ? job.drawing_path[0].path : null);
     setFeedback(null);
+    fetchConsumptions(job.id);
   };
 
   // Close splitscreen view
@@ -232,7 +244,7 @@ export default function JobOperations({ user }) {
       });
 
       setFeedback({ type: 'success', message: response.data.message });
-      
+
       // Refresh current job details
       fetchJobs();
     } catch (err) {
@@ -308,10 +320,10 @@ export default function JobOperations({ user }) {
       });
 
       setFeedback({ type: 'success', message: 'Technical drawing uploaded successfully.' });
-      
+
       const updatedJob = response.data.job;
       setViewingJob(updatedJob);
-      
+
       // Select the newly uploaded file
       if (updatedJob.drawing_path && updatedJob.drawing_path.length > 0) {
         setSelectedPreviewPath(updatedJob.drawing_path[updatedJob.drawing_path.length - 1].path);
@@ -337,10 +349,10 @@ export default function JobOperations({ user }) {
       });
 
       setFeedback({ type: 'success', message: 'Drawing deleted successfully.' });
-      
+
       const updatedJob = response.data.job;
       setViewingJob(updatedJob);
-      
+
       // Reset selected preview path if we deleted the active one
       if (selectedPreviewPath === pathToDelete) {
         setSelectedPreviewPath(updatedJob.drawing_path && updatedJob.drawing_path.length > 0 ? updatedJob.drawing_path[0].path : null);
@@ -394,9 +406,9 @@ export default function JobOperations({ user }) {
     // If moving to 'in_progress' and not allocated, open details for assignment
     if (targetStatus === 'in_progress' && (!job.assigned_worker_id || !job.machine_id)) {
       handleViewJobDetails(job);
-      setFeedback({ 
-        type: 'danger', 
-        message: 'Please allocate an operator and machine first to start Machining.' 
+      setFeedback({
+        type: 'danger',
+        message: 'Please allocate an operator and machine first to start Machining.'
       });
       return;
     }
@@ -422,15 +434,15 @@ export default function JobOperations({ user }) {
   // Helper styles for statuses
   const getStatusBadgeStyles = (status, hasChallan = false) => {
     switch (status) {
-      case 'pending': 
+      case 'pending':
         return { bg: '#fefbeb', text: '#d97706', border: '#fde68a', label: 'Pending Allocation' };
-      case 'in_progress': 
+      case 'in_progress':
         return { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe', label: 'Machining' };
-      case 'inspection': 
+      case 'inspection':
         return { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff', label: 'QC Inspection' };
-      case 'completed': 
+      case 'completed':
         return { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0', label: hasChallan ? 'Delivered' : 'Completed' };
-      default: 
+      default:
         return { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0', label: status };
     }
   };
@@ -440,7 +452,54 @@ export default function JobOperations({ user }) {
     pending: jobs.filter(j => j.status === 'pending'),
     in_progress: jobs.filter(j => j.status === 'in_progress'),
     inspection: jobs.filter(j => j.status === 'inspection'),
-    completed: jobs.filter(j => j.status === 'completed')
+    completed: jobs.filter(j => j.status === 'completed' && !j.archive) // We probably don't see archived in Kanban anyway
+  };
+
+  const fetchInventory = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await axios.get('/api/inventory', { headers: { Authorization: `Bearer ${token}` } });
+      setInventoryItems(res.data);
+    } catch (err) {
+      console.error('Failed to load inventory', err);
+    }
+  };
+
+  const fetchConsumptions = async (jobId) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await axios.get(`/api/jobs/${jobId}/consumptions`, { headers: { Authorization: `Bearer ${token}` } });
+      setConsumptions(res.data);
+    } catch (err) {
+      console.error('Failed to load consumptions', err);
+    }
+  };
+
+  const handleOpenConsumeModal = () => {
+    setShowConsumeModal(true);
+    setConsumeData({ inventory_item_id: '', quantity: '' });
+    fetchInventory();
+    fetchConsumptions(viewingJob.id);
+  };
+
+  const handleConsumeMaterial = async (e) => {
+    e.preventDefault();
+    setConsuming(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      await axios.post(`/api/jobs/${viewingJob.id}/consume-inventory`, consumeData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFeedback({ type: 'success', message: 'Material consumed successfully' });
+      fetchConsumptions(viewingJob.id);
+      fetchInventory();
+      setConsumeData({ inventory_item_id: '', quantity: '' });
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to consume material.' });
+    } finally {
+      setConsuming(false);
+    }
   };
 
   const isPdf = (path) => path && path.toLowerCase().endsWith('.pdf');
@@ -499,12 +558,12 @@ export default function JobOperations({ user }) {
                 <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-text-main)', margin: 0 }}>
                   {formattedDate}
                 </h3>
-                <span style={{ 
-                  fontSize: '11px', 
-                  fontWeight: '600', 
-                  backgroundColor: 'var(--color-bg-base)', 
-                  color: 'var(--color-text-muted)', 
-                  padding: '2px 8px', 
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  backgroundColor: 'var(--color-bg-base)',
+                  color: 'var(--color-text-muted)',
+                  padding: '2px 8px',
                   borderRadius: '10px',
                   border: '1px solid var(--color-border)'
                 }}>
@@ -512,25 +571,25 @@ export default function JobOperations({ user }) {
                 </span>
               </div>
 
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-                gap: '20px' 
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '20px'
               }}>
                 {grouped[date].map(job => {
                   const hasDrawings = job.drawing_path && job.drawing_path.length > 0;
                   const isDelivered = !!job.delivery_challan_item;
-                  
+
                   return (
                     <div
-                      key={job.id} 
+                      key={job.id}
                       className="card table-row-hover"
                       onClick={() => handleEditJob(job)}
-                      style={{ 
-                        padding: '16px', 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '12px', 
+                      style={{
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
                         cursor: 'pointer',
                         borderColor: isDelivered ? '#bbf7d0' : 'var(--color-border)',
                         boxShadow: 'var(--shadow-sm)',
@@ -566,12 +625,12 @@ export default function JobOperations({ user }) {
                           {job.job_card_number}
                         </span>
                         {!isDelivered && (
-                          <span style={{ 
-                            fontSize: '9px', 
-                            fontWeight: '600', 
-                            backgroundColor: 'var(--color-success-light)', 
-                            color: 'var(--color-success)', 
-                            padding: '2px 6px', 
+                          <span style={{
+                            fontSize: '9px',
+                            fontWeight: '600',
+                            backgroundColor: 'var(--color-success-light)',
+                            color: 'var(--color-success)',
+                            padding: '2px 6px',
                             borderRadius: '8px',
                             border: '1px solid rgba(34,197,94,0.1)'
                           }}>
@@ -608,16 +667,16 @@ export default function JobOperations({ user }) {
                             {job.drawing_path.map((dwg, dIdx) => {
                               const isImg = !dwg.path.toLowerCase().endsWith('.pdf');
                               return (
-                                <a 
+                                <a
                                   key={dIdx}
                                   href={`${import.meta.env.VITE_API_URL}/${dwg.path}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  style={{ 
-                                    width: '40px', 
-                                    height: '40px', 
-                                    borderRadius: '4px', 
-                                    border: '1px solid var(--color-border)', 
+                                  style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '4px',
+                                    border: '1px solid var(--color-border)',
                                     overflow: 'hidden',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -628,8 +687,8 @@ export default function JobOperations({ user }) {
                                   title={dwg.name}
                                 >
                                   {isImg ? (
-                                    <img 
-                                      src={`${import.meta.env.VITE_API_URL}/${dwg.path}`} 
+                                    <img
+                                      src={`${import.meta.env.VITE_API_URL}/${dwg.path}`}
                                       alt={dwg.name}
                                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                     />
@@ -661,7 +720,7 @@ export default function JobOperations({ user }) {
     const statusMeta = getStatusBadgeStyles(jobToUse.status, !!jobToUse.delivery_challan_item);
     return (
       <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        
+
         {/* Title bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyItems: 'center', gap: '12px', borderBottom: '1px solid var(--color-border)', paddingBottom: '16px' }}>
           <button className="logout-btn" onClick={handleBack} style={{ padding: '6px 12px' }}>
@@ -670,12 +729,12 @@ export default function JobOperations({ user }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: '700' }}>Job Card: {jobToUse.job_card_number}</h2>
-              <span style={{ 
-                fontSize: '11px', 
-                padding: '2px 8px', 
-                backgroundColor: statusMeta.bg, 
-                color: statusMeta.text, 
-                border: `1px solid ${statusMeta.border}`, 
+              <span style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                backgroundColor: statusMeta.bg,
+                color: statusMeta.text,
+                border: `1px solid ${statusMeta.border}`,
                 borderRadius: '12px',
                 fontWeight: '600'
               }}>
@@ -696,10 +755,10 @@ export default function JobOperations({ user }) {
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          
+
           {/* LEFT PANEL: Job Configuration / Info */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', maxHeight: 'calc(100vh - 220px)' }}>
-            
+
             {/* 1. Job Basic Details */}
             <div>
               <h3 style={{ fontSize: '14px', borderBottom: '1px solid var(--color-border)', paddingBottom: '8px', color: 'var(--color-primary)', fontWeight: '600', marginBottom: '12px' }}>
@@ -736,7 +795,7 @@ export default function JobOperations({ user }) {
               <h3 style={{ fontSize: '14px', borderBottom: '1px solid var(--color-border)', paddingBottom: '8px', color: 'var(--color-primary)', fontWeight: '600', marginBottom: '12px' }}>
                 Operator & Machine Assignment
               </h3>
-              
+
               {isManagerOrAbove ? (
                 <form onSubmit={handleSaveAssignment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div className="form-group">
@@ -746,9 +805,9 @@ export default function JobOperations({ user }) {
                       onChange={(val) => setWorkerId(val)}
                       options={[
                         { value: '', label: '-- Choose Operator --' },
-                        ...workers.map(w => ({ 
-                          value: w.id, 
-                          label: `${w.name} ${w.active_jobs_count > 0 ? `(${w.active_jobs_count} Active)` : ''}` 
+                        ...workers.map(w => ({
+                          value: w.id,
+                          label: `${w.name} ${w.active_jobs_count > 0 ? `(${w.active_jobs_count} Active)` : ''}`
                         }))
                       ]}
                       style={{ height: '36px' }}
@@ -764,7 +823,7 @@ export default function JobOperations({ user }) {
                         const isBusy = m.active_jobs && m.active_jobs.length > 0 && !m.active_jobs.some(j => j.id === jobToUse.id);
                         const busyLabel = isBusy ? ` (BUSY: Job #${m.active_jobs[0].job_card_number})` : '';
                         const statusLabel = m.status === 'maintenance' ? ' (MAINTENANCE)' : m.status === 'inactive' ? ' (INACTIVE)' : busyLabel;
-                        
+
                         return {
                           value: m.id,
                           label: `${m.machine_code} - ${m.name}${statusLabel}`,
@@ -776,8 +835,8 @@ export default function JobOperations({ user }) {
                     />
                   </div>
 
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="form-button"
                     disabled={savingAssign}
                     style={{ width: 'auto', alignSelf: 'flex-start', marginTop: '4px', height: '34px', padding: '0 16px', fontSize: '12px', backgroundColor: 'var(--color-primary)' }}
@@ -806,11 +865,11 @@ export default function JobOperations({ user }) {
                   Attach Blueprints / Drawings
                 </h3>
                 <div style={{ border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '12px', textAlign: 'center', backgroundColor: 'var(--color-bg-base)' }}>
-                  <input 
-                    type="file" 
-                    id="job-drawing" 
-                    accept=".pdf,.png,.jpg,.jpeg" 
-                    onChange={handleDrawingUpload} 
+                  <input
+                    type="file"
+                    id="job-drawing"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    onChange={handleDrawingUpload}
                     style={{ display: 'none' }}
                     disabled={uploadingDrawing}
                   />
@@ -847,13 +906,13 @@ export default function JobOperations({ user }) {
                 {viewingJob.end_date && (
                   <span>Completion Date: <strong>{new Date(viewingJob.end_date).toLocaleDateString()}</strong></span>
                 )}
-                
+
                 {viewingJob.status === 'in_progress' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '18px', fontWeight: '800', color: '#2563eb', padding: '4px 12px', backgroundColor: '#dbeafe', borderRadius: '8px', border: '1px solid #bfdbfe', fontFamily: 'monospace' }}>
                     <Clock size={18} /> <LiveTimer startTime={viewingJob.machining_started_at} accumulated={viewingJob.machining_duration_seconds} />
                   </div>
                 )}
-                
+
                 {(viewingJob.status === 'completed' || viewingJob.status === 'inspection') && viewingJob.machining_duration_seconds > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '15px', fontWeight: '700', color: 'var(--color-text-muted)', padding: '4px 12px', backgroundColor: 'var(--color-bg-base)', borderRadius: '8px', border: '1px solid var(--color-border)', fontFamily: 'monospace' }}>
                     <Check size={16} /> {formatDuration(viewingJob.machining_duration_seconds)}
@@ -866,7 +925,7 @@ export default function JobOperations({ user }) {
                 {isWorker && (
                   <>
                     {viewingJob.status === 'pending' && (
-                      <button 
+                      <button
                         onClick={() => handleStatusUpdate('in_progress', 'Started machining by worker')}
                         className="form-button"
                         style={{ width: 'auto', marginTop: 0, height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--color-primary)' }}
@@ -875,7 +934,7 @@ export default function JobOperations({ user }) {
                       </button>
                     )}
                     {viewingJob.status === 'in_progress' && (
-                      <button 
+                      <button
                         onClick={() => handleStatusUpdate('inspection', 'Submitted for inspection by worker')}
                         className="form-button"
                         style={{ width: 'auto', marginTop: 0, height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#7c3aed' }}
@@ -891,6 +950,16 @@ export default function JobOperations({ user }) {
                   </>
                 )}
 
+                {(viewingJob.status === 'in_progress') && (
+                  <button
+                    onClick={handleOpenConsumeModal}
+                    className="form-button"
+                    style={{ width: 'auto', marginTop: 0, height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c' }}
+                  >
+                    <Layers size={14} /> Consume Material
+                  </button>
+                )}
+
                 {isManagerOrAbove && (
                   <>
                     {viewingJob.status === 'pending' && (
@@ -899,7 +968,7 @@ export default function JobOperations({ user }) {
                       </div>
                     )}
                     {viewingJob.status === 'in_progress' && (
-                      <button 
+                      <button
                         onClick={() => handleStatusUpdate('inspection', 'Status changed to inspection by manager')}
                         className="form-button"
                         style={{ width: 'auto', marginTop: 0, height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#7c3aed' }}
@@ -909,14 +978,14 @@ export default function JobOperations({ user }) {
                     )}
                     {viewingJob.status === 'inspection' && (
                       <>
-                        <button 
+                        <button
                           onClick={() => handleStatusUpdate('completed', 'Inspection Passed')}
                           className="form-button"
                           style={{ width: 'auto', marginTop: 0, height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--color-success)' }}
                         >
                           <Check size={14} /> Pass Inspection & Complete
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleStatusUpdate('in_progress', 'QC Failed, returned for rework')}
                           className="form-button"
                           style={{ width: 'auto', marginTop: 0, height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--color-danger)' }}
@@ -938,8 +1007,8 @@ export default function JobOperations({ user }) {
               {/* Remarks Box */}
               <div className="form-group" style={{ marginTop: '16px' }}>
                 <label className="form-label" style={{ fontSize: '11px' }}>Notes / Remarks</label>
-                <textarea 
-                  className="form-input" 
+                <textarea
+                  className="form-input"
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="e.g. Dimensions checked, surface tolerance calibrated..."
@@ -947,6 +1016,30 @@ export default function JobOperations({ user }) {
                   onBlur={() => handleStatusUpdate(viewingJob.status, remarks)}
                 />
                 <span style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>Focus out of the text area to automatically save remarks.</span>
+              </div>
+
+              {/* Consumption History */}
+              <div className="form-group" style={{ marginTop: '16px' }}>
+                <label className="form-label" style={{ fontSize: '11px' }}>Consumption History ({consumptions.length})</label>
+                {consumptions.length === 0 ? (
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic', padding: '8px 0' }}>
+                    No material consumed for this job yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                    {consumptions.map((cons) => (
+                      <div key={cons.id} style={{ padding: '8px 12px', backgroundColor: 'var(--color-bg-base)', border: '1px solid var(--color-border)', borderRadius: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--color-text)' }}>{cons.inventory_item?.name}</span>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--color-primary)' }}>{cons.quantity} {cons.inventory_item?.unit}</span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
+                          Logged by {cons.user?.name || 'System'} at {new Date(cons.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -962,7 +1055,7 @@ export default function JobOperations({ user }) {
                 </a>
               )}
             </div>
-            
+
             <div style={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
               {/* File List Sidebar */}
               <div style={{ width: '250px', borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--color-bg-base)', overflowY: 'auto' }}>
@@ -973,15 +1066,15 @@ export default function JobOperations({ user }) {
                   viewingJob.drawing_path.map((item, index) => {
                     const isSelected = selectedPreviewPath === item.path;
                     const isRenaming = renamingPath === item.path;
-                    
+
                     return (
-                      <div 
-                        key={index} 
+                      <div
+                        key={index}
                         onClick={() => setSelectedPreviewPath(item.path)}
-                        style={{ 
-                          padding: '10px', 
-                          borderBottom: '1px solid var(--color-border)', 
-                          cursor: 'pointer', 
+                        style={{
+                          padding: '10px',
+                          borderBottom: '1px solid var(--color-border)',
+                          cursor: 'pointer',
                           backgroundColor: isSelected ? '#ffffff' : 'transparent',
                           display: 'flex',
                           flexDirection: 'column',
@@ -990,16 +1083,16 @@ export default function JobOperations({ user }) {
                       >
                         {isRenaming ? (
                           <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                            <input 
-                              type="text" 
-                              className="form-input" 
-                              value={newName} 
-                              onChange={e => setNewName(e.target.value)} 
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={newName}
+                              onChange={e => setNewName(e.target.value)}
                               style={{ height: '24px', fontSize: '11px', padding: '0 4px', flexGrow: 1 }}
                             />
-                            <button 
+                            <button
                               onClick={() => handleRenameDrawing(item.path, newName)}
-                              className="form-button" 
+                              className="form-button"
                               style={{ width: 'auto', padding: '2px 6px', fontSize: '10px', height: '24px', marginTop: 0, backgroundColor: 'var(--color-success)' }}
                             >
                               Save
@@ -1012,14 +1105,14 @@ export default function JobOperations({ user }) {
                             </span>
                             {isManagerOrAbove && (
                               <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                                <button 
+                                <button
                                   onClick={() => { setRenamingPath(item.path); setNewName(item.name); }}
                                   style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', color: 'var(--color-text-muted)', fontSize: '12px' }}
                                   title="Rename file"
                                 >
                                   ✏️
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => handleDeleteDrawing(item.path)}
                                   style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', color: 'var(--color-danger)', fontSize: '12px' }}
                                   title="Delete file"
@@ -1046,10 +1139,10 @@ export default function JobOperations({ user }) {
                   isPdf(selectedPreviewPath) ? (
                     <iframe src={`${import.meta.env.VITE_API_URL}/${selectedPreviewPath}`} width="100%" height="100%" style={{ border: 'none' }} title="Drawing Blueprint" />
                   ) : (
-                    <img 
-                      src={`${import.meta.env.VITE_API_URL}/${selectedPreviewPath}`} 
-                      alt="Job Drawing" 
-                      style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.15)' }} 
+                    <img
+                      src={`${import.meta.env.VITE_API_URL}/${selectedPreviewPath}`}
+                      alt="Job Drawing"
+                      style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.15)' }}
                     />
                   )
                 ) : (
@@ -1062,6 +1155,95 @@ export default function JobOperations({ user }) {
             </div>
           </div>
 
+          {/* Consume Material Modal */}
+          {showConsumeModal && createPortal(
+            <div className="modal-overlay" onClick={() => setShowConsumeModal(false)}>
+              <div className="modal-content animate-scale-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+                <div className="modal-header">
+                  <h2>Log Inventory Consumption</h2>
+                  <button 
+                    onClick={() => setShowConsumeModal(false)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="modal-body">
+
+                  <div style={{ marginBottom: '20px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--color-border)', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ color: 'var(--color-text-muted)' }}>Job Card:</span>
+                      <strong>{viewingJob.job_card_number}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--color-text-muted)' }}>Required Quantity:</span>
+                      <strong>{viewingJob.quantity} {viewingJob.po_item?.unit}</strong>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleConsumeMaterial} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Select Inventory Material</label>
+                      <CustomSelect
+                        value={consumeData.inventory_item_id}
+                        onChange={val => setConsumeData({ ...consumeData, inventory_item_id: val })}
+                        options={[
+                          { value: '', label: '-- Choose Item --' },
+                          ...inventoryItems.map(item => ({
+                            value: item.id,
+                            label: `${item.sku} - ${item.name} (${item.stock} ${item.unit} available)`,
+                            disabled: item.stock <= 0
+                          }))
+                        ]}
+                        style={{ height: '36px' }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Quantity to Consume</label>
+                      <input required type="number" step="1" min="0" className="form-input" value={consumeData.quantity} onChange={e => setConsumeData({ ...consumeData, quantity: e.target.value })} />
+                    </div>
+
+                    <button type="submit" className="form-button" disabled={consuming || !consumeData.inventory_item_id || !consumeData.quantity} style={{ marginTop: '8px' }}>
+                      {consuming ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Consumption'}
+                    </button>
+                  </form>
+
+                  <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', borderBottom: '1px solid var(--color-border)', paddingBottom: '8px' }}>Consumption History</h3>
+
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    {consumptions.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                        No material consumed for this job yet.
+                      </div>
+                    ) : (
+                      <table style={{ width: '100%', fontSize: '12px', textAlign: 'left', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: 'var(--color-bg-base)', borderBottom: '1px solid var(--color-border)' }}>
+                            <th style={{ padding: '8px' }}>Date</th>
+                            <th style={{ padding: '8px' }}>Item</th>
+                            <th style={{ padding: '8px' }}>Qty</th>
+                            <th style={{ padding: '8px' }}>Logged By</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {consumptions.map(c => (
+                            <tr key={c.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                              <td style={{ padding: '8px', color: 'var(--color-text-muted)' }}>{new Date(c.created_at).toLocaleString()}</td>
+                              <td style={{ padding: '8px', fontWeight: '500' }}>{c.inventory_item?.name || 'Unknown'}</td>
+                              <td style={{ padding: '8px', fontWeight: '700', color: 'var(--color-primary)' }}>{c.quantity} {c.inventory_item?.unit}</td>
+                              <td style={{ padding: '8px' }}>{c.consumer?.name || 'System'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
+
         </div>
       </div>
     );
@@ -1072,7 +1254,7 @@ export default function JobOperations({ user }) {
   // ==========================================
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '80vh' }}>
-      
+
       {/* Header bar with toggle */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
@@ -1080,19 +1262,19 @@ export default function JobOperations({ user }) {
             {isWorker ? 'My Assigned Machining Tasks' : 'Job Operations Dashboard'}
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            {isWorker 
-              ? 'Start work on pending items, log progress, and submit to Quality Inspection when complete.' 
+            {isWorker
+              ? 'Start work on pending items, log progress, and submit to Quality Inspection when complete.'
               : 'Allocate incoming materials to floor technicians, specify lathes/CNC machines, and sign-off quality inspections.'}
           </p>
         </div>
 
         {/* View Toggle and Filter container */}
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          
+
           {/* Kanban / List / Archive Toggle buttons */}
           <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', backgroundColor: 'var(--color-card-bg)' }}>
             {!isWorker && (
-              <button 
+              <button
                 onClick={() => setViewMode('kanban')}
                 style={{
                   display: 'flex',
@@ -1111,7 +1293,7 @@ export default function JobOperations({ user }) {
                 <Wrench size={14} /> Kanban
               </button>
             )}
-            <button 
+            <button
               onClick={() => setViewMode('list')}
               style={{
                 display: 'flex',
@@ -1129,7 +1311,7 @@ export default function JobOperations({ user }) {
             >
               <List size={14} /> List View
             </button>
-            <button 
+            <button
               onClick={() => setViewMode('archive')}
               style={{
                 display: 'flex',
@@ -1163,8 +1345,8 @@ export default function JobOperations({ user }) {
                 ]}
                 style={{ width: '130px', height: '34px' }}
               />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Machine"
                 className="form-input"
                 value={filterMachine}
@@ -1229,7 +1411,7 @@ export default function JobOperations({ user }) {
       ) : viewMode === 'archive' ? (
         renderArchiveGallery()
       ) : viewMode === 'list' || isWorker ? (
-        
+
         /* ==========================================
             VIEW Mode: LIST VIEW (Default for Workers)
            ========================================== */
@@ -1285,11 +1467,11 @@ export default function JobOperations({ user }) {
                     <td style={{ padding: '12px 16px', fontWeight: '500' }}>{job.machine?.machine_code || <em style={{ color: 'var(--color-text-light)' }}>-</em>}</td>
                     <td style={{ padding: '12px 16px' }}>{job.worker ? job.worker.name : <em style={{ color: 'var(--color-danger)' }}>Unassigned</em>}</td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ 
-                        fontSize: '10px', 
-                        padding: '2px 8px', 
-                        backgroundColor: statusStyles.bg, 
-                        color: statusStyles.text, 
+                      <span style={{
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        backgroundColor: statusStyles.bg,
+                        color: statusStyles.text,
                         border: `1px solid ${statusStyles.border}`,
                         borderRadius: '12px',
                         fontWeight: '600'
@@ -1298,7 +1480,7 @@ export default function JobOperations({ user }) {
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <button 
+                      <button
                         onClick={() => handleEditJob(job)}
                         className="logout-btn"
                         style={{ padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', height: '28px' }}
@@ -1314,14 +1496,14 @@ export default function JobOperations({ user }) {
           </table>
         </div>
       ) : (
-        
+
         /* ==========================================
             VIEW Mode: KANBAN BOARD (Admins/Managers)
            ========================================== */
-        <div style={{ 
-          display: 'flex', 
-          gap: '20px', 
-          overflowX: 'auto', 
+        <div style={{
+          display: 'flex',
+          gap: '20px',
+          overflowX: 'auto',
           paddingBottom: '10px',
           alignItems: 'stretch',
           height: 'calc(100vh - 240px)',
@@ -1332,7 +1514,7 @@ export default function JobOperations({ user }) {
             let colTitle = '';
             let headerColor = '';
             let headerBg = '';
-            
+
             if (colKey === 'pending') {
               colTitle = 'Pending Allocation';
               headerColor = '#b45309';
@@ -1352,8 +1534,8 @@ export default function JobOperations({ user }) {
             }
 
             return (
-              <div 
-                key={colKey} 
+              <div
+                key={colKey}
                 onDragOver={(e) => {
                   e.preventDefault();
                   if (dragOverCol !== colKey) setDragOverCol(colKey);
@@ -1363,28 +1545,28 @@ export default function JobOperations({ user }) {
                   setDragOverCol(null);
                   handleDrop(e, colKey);
                 }}
-              style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: '0',
-                width: '320px', 
-                minWidth: '320px', 
-                backgroundColor: dragOverCol === colKey ? 'var(--color-primary-light)' : 'var(--color-bg-base)', 
-                border: dragOverCol === colKey ? '2px dashed var(--color-primary)' : '1px solid var(--color-border)', 
-                borderRadius: 'var(--radius-md)', 
-                overflow: 'hidden',
-                height: '100%',
-                transition: 'all 0.15s ease'
-              }}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0',
+                  width: '320px',
+                  minWidth: '320px',
+                  backgroundColor: dragOverCol === colKey ? 'var(--color-primary-light)' : 'var(--color-bg-base)',
+                  border: dragOverCol === colKey ? '2px dashed var(--color-primary)' : '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden',
+                  height: '100%',
+                  transition: 'all 0.15s ease'
+                }}
               >
-                
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  justifyContent: 'center', 
-                  alignItems: 'center', 
-                  padding: '10px 14px', 
-                  backgroundColor: headerBg, 
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: '10px 14px',
+                  backgroundColor: headerBg,
                   borderBottom: `1px solid rgba(0,0,0,0.05)`,
                   flexShrink: 0,
                   gap: '4px'
@@ -1402,27 +1584,27 @@ export default function JobOperations({ user }) {
                 </div>
 
                 {/* Column Cards Container — scrollable */}
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  gap: '10px', 
-                  flexGrow: 1, 
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  flexGrow: 1,
                   overflowY: 'auto',
                   padding: '12px',
                   scrollbarWidth: 'thin',
                   scrollbarColor: 'var(--color-border) transparent'
                 }}>
                   {columnJobs.map(job => (
-                      <div 
-                        key={job.id} 
-                        className="card" 
-                        draggable={true}
-                        onDragStart={(e) => handleDragStart(e, job)}
-                        onClick={() => handleEditJob(job)}
-                        style={{ 
-                        padding: '12px', 
-                        display: 'flex', 
-                        flexDirection: 'column', 
+                    <div
+                      key={job.id}
+                      className="card"
+                      draggable={true}
+                      onDragStart={(e) => handleDragStart(e, job)}
+                      onClick={() => handleEditJob(job)}
+                      style={{
+                        padding: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
                         width: '100%',
                         height: '140px',
                         flexShrink: 0,
@@ -1436,8 +1618,8 @@ export default function JobOperations({ user }) {
                         borderLeftWidth: '4px',
                         borderLeftColor: job.status === 'pending' ? '#f59e0b'
                           : job.status === 'in_progress' ? '#3b82f6'
-                          : job.status === 'inspection' ? '#a855f7'
-                          : '#22c55e',
+                            : job.status === 'inspection' ? '#a855f7'
+                              : '#22c55e',
                         backgroundColor: '#ffffff'
                       }}
                     >
@@ -1498,16 +1680,16 @@ export default function JobOperations({ user }) {
                     </div>
                   ))}
                   {columnJobs.length === 0 && (
-                    <div style={{ 
-                      flexGrow: 1, 
-                      border: '2px dashed var(--color-border)', 
-                      borderRadius: 'var(--radius-sm)', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      color: 'var(--color-text-light)', 
-                      fontSize: '11px', 
-                      padding: '40px 20px', 
+                    <div style={{
+                      flexGrow: 1,
+                      border: '2px dashed var(--color-border)',
+                      borderRadius: 'var(--radius-sm)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--color-text-light)',
+                      fontSize: '11px',
+                      padding: '40px 20px',
                       textAlign: 'center',
                       minHeight: '100px'
                     }}>
@@ -1525,14 +1707,14 @@ export default function JobOperations({ user }) {
       {/* ── Job Details Drawer ── */}
       {viewingJob && (
         <>
-          <div 
+          <div
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 999 }}
             onClick={() => setViewingJob(null)}
           />
-          <div 
+          <div
             className="animate-slide-in-right"
-            style={{ 
-              position: 'fixed', top: 0, right: 0, width: '450px', height: '100vh', 
+            style={{
+              position: 'fixed', top: 0, right: 0, width: '450px', height: '100vh',
               backgroundColor: '#ffffff', zIndex: 1000, boxShadow: '-4px 0 24px rgba(0,0,0,0.15)',
               display: 'flex', flexDirection: 'column', overflowY: 'auto'
             }}
@@ -1546,9 +1728,9 @@ export default function JobOperations({ user }) {
                 <X size={20} color="var(--color-text-muted)" />
               </button>
             </div>
-            
+
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              
+
               <div style={{ backgroundColor: 'var(--color-bg-base)', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Part Details</div>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-text-main)', marginBottom: '4px' }}>{viewingJob.po_item?.description || 'N/A'}</div>
@@ -1579,7 +1761,7 @@ export default function JobOperations({ user }) {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={() => handleEditJob(viewingJob)}
                 className="form-button"
                 style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', backgroundColor: 'var(--color-primary)', fontSize: '14px' }}

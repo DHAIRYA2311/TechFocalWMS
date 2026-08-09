@@ -1,23 +1,90 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import axios from 'axios';
 import CustomSelect from './CustomSelect';
-import { Package, Search, Plus, ArrowUpRight, ArrowDownRight, Tag, AlertTriangle } from 'lucide-react';
-
-const MOCK_INVENTORY = [
-  { id: 'INV-001', name: 'Mild Steel Plate (10mm)', category: 'raw_materials', stock: 45, unit: 'sheets', reorder: 20, location: 'Rack A-2' },
-  { id: 'INV-002', name: 'Stainless Steel Round Bar (Ø50mm)', category: 'raw_materials', stock: 12, unit: 'meters', reorder: 15, location: 'Rack B-1' },
-  { id: 'INV-003', name: 'CNC Cutting Inserts (APMT 1604)', category: 'tools', stock: 120, unit: 'pcs', reorder: 50, location: 'Cabinet 1' },
-  { id: 'INV-004', name: 'Soluble Cutting Oil (Cooldex)', category: 'consumables', stock: 3, unit: 'barrels', reorder: 5, location: 'Storage Bay' },
-  { id: 'INV-005', name: 'Aluminum Plate (5mm)', category: 'raw_materials', stock: 30, unit: 'sheets', reorder: 10, location: 'Rack A-4' },
-  { id: 'INV-006', name: 'M12 Hex Cap Bolts (Grade 8.8)', category: 'hardware', stock: 850, unit: 'pcs', reorder: 200, location: 'Drawer 3-B' },
-  { id: 'INV-007', name: 'TIG Welding Filler Wire (SS308L)', category: 'consumables', stock: 8, unit: 'kg', reorder: 10, location: 'Welding Section' }
-];
+import { Package, Search, Plus, ArrowUpRight, ArrowDownRight, Tag, AlertTriangle, Loader2, X } from 'lucide-react';
 
 export default function Inventory() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [feedback, setFeedback] = useState(null);
+  
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [restockItem, setRestockItem] = useState(null);
+  const [restockQty, setRestockQty] = useState('');
+  const [restocking, setRestocking] = useState(false);
+  
+  const [newItem, setNewItem] = useState({
+    sku: '', name: '', category: 'raw_materials', stock: '', unit: 'pcs', reorder_level: '', location: ''
+  });
+  const [adding, setAdding] = useState(false);
 
-  const filteredItems = MOCK_INVENTORY.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.id.toLowerCase().includes(searchTerm.toLowerCase());
+  const fetchInventory = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await axios.get('/api/inventory', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setItems(res.data);
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'danger', message: 'Failed to load inventory.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInventory();
+  }, []);
+
+  const handleAddItem = async (e) => {
+    e.preventDefault();
+    setAdding(true);
+    setFeedback(null);
+    try {
+      const token = localStorage.getItem('auth_token');
+      await axios.post('/api/inventory', newItem, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFeedback({ type: 'success', message: 'Item added successfully.' });
+      setShowAddModal(false);
+      setNewItem({ sku: '', name: '', category: 'raw_materials', stock: '', unit: 'pcs', reorder_level: '', location: '' });
+      fetchInventory();
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to add item.' });
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRestock = async (e) => {
+    e.preventDefault();
+    setRestocking(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      await axios.post(`/api/inventory/${restockItem.id}/restock`, { quantity: restockQty }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchInventory();
+      setShowRestockModal(false);
+      setRestockQty('');
+      setFeedback({ type: 'success', message: 'Stock added successfully!' });
+    } catch (err) {
+      console.error(err);
+      setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to restock item.' });
+    } finally {
+      setRestocking(false);
+    }
+  };
+
+  const filteredItems = items.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesCategory = categoryFilter === '' || item.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
@@ -33,18 +100,26 @@ export default function Inventory() {
   };
 
   const getStockBadgeColor = (item) => {
-    if (item.stock <= item.reorder / 2) {
+    if (item.stock <= item.reorder_level / 2) {
       return { bg: 'var(--color-danger-light)', text: 'var(--color-danger)', border: 'rgba(239, 68, 68, 0.15)', label: 'Critical Stock' };
     }
-    if (item.stock <= item.reorder) {
+    if (item.stock <= item.reorder_level) {
       return { bg: 'var(--color-warning-light)', text: 'var(--color-warning)', border: 'rgba(245, 158, 11, 0.15)', label: 'Low Stock' };
     }
     return { bg: 'var(--color-success-light)', text: 'var(--color-success)', border: 'rgba(34, 197, 94, 0.15)', label: 'In Stock' };
   };
 
+  const lowStockCount = items.filter(i => i.stock <= i.reorder_level).length;
+
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
+      {feedback && (
+        <div className={`alert alert-${feedback.type}`}>
+          {feedback.message}
+        </div>
+      )}
+
       {/* Overview Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -53,7 +128,7 @@ export default function Inventory() {
           </div>
           <div>
             <span style={cardLabelStyle}>Total Item SKUs</span>
-            <h4 style={cardValueStyle}>{MOCK_INVENTORY.length}</h4>
+            <h4 style={cardValueStyle}>{items.length}</h4>
           </div>
         </div>
 
@@ -63,7 +138,7 @@ export default function Inventory() {
           </div>
           <div>
             <span style={cardLabelStyle}>Low Stock SKUs</span>
-            <h4 style={cardValueStyle}>3 Items</h4>
+            <h4 style={cardValueStyle}>{lowStockCount} Items</h4>
           </div>
         </div>
       </div>
@@ -99,6 +174,7 @@ export default function Inventory() {
 
         <button 
           className="form-button"
+          onClick={() => setShowAddModal(true)}
           style={{ width: 'auto', marginTop: 0, height: '38px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
         >
           <Plus size={16} />
@@ -119,12 +195,15 @@ export default function Inventory() {
                 <th style={thStyle}>Reorder Level</th>
                 <th style={thStyle}>Location</th>
                 <th style={thStyle}>Status</th>
+                <th style={{ padding: '16px', color: 'var(--color-text-muted)', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan="8" style={{ padding: '30px', textAlign: 'center' }}><Loader2 className="animate-spin" /></td></tr>
+              ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{ padding: '30px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                  <td colSpan="8" style={{ padding: '30px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                     No inventory items match search filters.
                   </td>
                 </tr>
@@ -133,29 +212,31 @@ export default function Inventory() {
                   const badge = getStockBadgeColor(item);
                   return (
                     <tr key={item.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.15s ease' }} className="table-row-hover">
-                      <td style={{ ...tdStyle, fontWeight: '600', color: 'var(--color-primary)' }}>{item.id}</td>
+                      <td style={{ ...tdStyle, fontWeight: '600', color: 'var(--color-primary)' }}>{item.sku}</td>
                       <td style={{ ...tdStyle, fontWeight: '500' }}>{item.name}</td>
                       <td style={tdStyle}>{getCategoryLabel(item.category)}</td>
                       <td style={{ ...tdStyle, fontWeight: '600' }}>
                         {item.stock} {item.unit}
                       </td>
-                      <td style={tdStyle}>{item.reorder} {item.unit}</td>
+                      <td style={tdStyle}>{item.reorder_level} {item.unit}</td>
                       <td style={tdStyle}>{item.location}</td>
-                      <td style={tdStyle}>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '3px 8px',
-                          borderRadius: '12px',
-                          fontSize: '11px',
-                          fontWeight: '600',
-                          backgroundColor: badge.bg,
-                          color: badge.text,
-                          border: `1px solid ${badge.border}`
-                        }}>
+                      <td style={{ padding: '16px' }}>
+                        <span style={{ fontSize: '11px', padding: '4px 10px', backgroundColor: badge.bg, color: badge.text, border: `1px solid ${badge.border}`, borderRadius: '12px', fontWeight: '600' }}>
                           {badge.label}
                         </span>
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                        <button 
+                          onClick={() => {
+                            setRestockItem(item);
+                            setRestockQty('');
+                            setShowRestockModal(true);
+                          }}
+                          className="form-button"
+                          style={{ height: '28px', padding: '0 12px', fontSize: '11px', backgroundColor: '#3b82f6', display: 'inline-flex', alignItems: 'center', gap: '4px', width: 'auto' }}
+                        >
+                          <Plus size={12} /> Restock
+                        </button>
                       </td>
                     </tr>
                   );
@@ -165,6 +246,107 @@ export default function Inventory() {
           </table>
         </div>
       </div>
+
+      {showAddModal && createPortal(
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal-content animate-scale-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h2>Add New Inventory Item</h2>
+              <button 
+                onClick={() => setShowAddModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="form-group">
+                  <label className="form-label">SKU / Item ID</label>
+                  <input required type="text" className="form-input" value={newItem.sku} onChange={e => setNewItem({...newItem, sku: e.target.value})} placeholder="e.g. INV-008" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Item Name</label>
+                  <input required type="text" className="form-input" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Category</label>
+                    <CustomSelect 
+                      value={newItem.category} 
+                      onChange={val => setNewItem({...newItem, category: val})}
+                      options={[
+                        { value: 'raw_materials', label: 'Raw Materials' },
+                        { value: 'tools', label: 'Tools' },
+                        { value: 'consumables', label: 'Consumables' },
+                        { value: 'hardware', label: 'Hardware Components' }
+                      ]}
+                      style={{ height: '36px' }}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Unit (e.g. pcs, kg, m)</label>
+                    <input required type="text" className="form-input" value={newItem.unit} onChange={e => setNewItem({...newItem, unit: e.target.value})} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Initial Stock</label>
+                    <input required type="number" step="any" min="0" className="form-input" value={newItem.stock} onChange={e => setNewItem({...newItem, stock: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Reorder Level</label>
+                    <input required type="number" step="any" min="0" className="form-input" value={newItem.reorder_level} onChange={e => setNewItem({...newItem, reorder_level: e.target.value})} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Location (Rack/Bin)</label>
+                  <input type="text" className="form-input" value={newItem.location} onChange={e => setNewItem({...newItem, location: e.target.value})} />
+                </div>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                  <button type="button" className="form-button" style={{ backgroundColor: 'var(--color-bg-base)', color: 'var(--color-text-main)' }} onClick={() => setShowAddModal(false)}>Cancel</button>
+                  <button type="submit" className="form-button" disabled={adding}>
+                    {adding ? <Loader2 size={16} className="animate-spin" /> : 'Save Item'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showRestockModal && createPortal(
+        <div className="modal-overlay" onClick={() => setShowRestockModal(false)}>
+          <div className="modal-content animate-scale-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h2>Restock Item</h2>
+              <button 
+                onClick={() => setShowRestockModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '16px', fontSize: '13px', color: 'var(--color-text-main)' }}>
+                Adding stock for <strong>{restockItem?.name}</strong> ({restockItem?.sku})<br/>
+                Current Stock: <strong>{restockItem?.stock} {restockItem?.unit}</strong>
+              </div>
+              <form onSubmit={handleRestock} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="form-group">
+                  <label className="form-label">Stock to Add ({restockItem?.unit})</label>
+                  <input required type="number" step="1" min="1" className="form-input" value={restockQty} onChange={e => setRestockQty(e.target.value)} />
+                </div>
+                <button type="submit" className="form-button" disabled={restocking} style={{ marginTop: '8px' }}>
+                  {restocking ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Restock'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );

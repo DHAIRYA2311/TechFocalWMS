@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use App\Models\Attendance;
 use App\Models\User;
 use App\Services\PushNotificationService;
+use App\Services\HolidayService;
 use Carbon\Carbon;
 
 class CheckAttendanceReminders extends Command
@@ -47,10 +48,23 @@ class CheckAttendanceReminders extends Command
 
         $shiftTitle = ucfirst($shift) . ' Shift';
         
-        // Find all active workers and helpers
+        // Check if today is a Holiday / Weekly Off
+        $holidayCheck = HolidayService::isHoliday($date, $shift);
+        if ($holidayCheck['is_holiday']) {
+            $this->info("Today is a {$holidayCheck['type']} ({$holidayCheck['reason']}). Skipping attendance notifications.");
+            return 0;
+        }
+        
+        // Find active workers and helpers assigned to THIS specific shift
         $activeWorkers = User::whereIn('role', ['worker', 'helper'])
             ->where('status', 'active')
+            ->where('shift', $shift)
             ->get();
+
+        if ($activeWorkers->isEmpty()) {
+            $this->info("No staff assigned to the {$shiftTitle}. Skipping attendance notifications.");
+            return 0;
+        }
 
         if ($type === 'start') {
             // At shift start, we just notify all workers to mark attendance

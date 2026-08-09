@@ -64,6 +64,11 @@ class JobCard extends Model
         return $this->belongsTo(Machine::class, 'machine_id');
     }
 
+    public function consumptions()
+    {
+        return $this->hasMany(InventoryConsumption::class);
+    }
+
     public function getDrawingPathAttribute($value)
     {
         if (empty($value)) {

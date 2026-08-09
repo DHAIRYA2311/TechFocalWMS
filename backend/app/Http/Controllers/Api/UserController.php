@@ -228,13 +228,25 @@ class UserController extends Controller
         $month = $request->query('month', \Illuminate\Support\Carbon::now()->month);
         $year = $request->query('year', \Illuminate\Support\Carbon::now()->year);
 
+        $userTarget = \App\Models\User::find($id);
+        $shift = $userTarget ? $userTarget->shift : 'day';
+
         $logs = \App\Models\Attendance::where('user_id', $id)
             ->whereMonth('date', $month)
             ->whereYear('date', $year)
             ->orderBy('date', 'asc')
             ->get()
-            ->map(function ($att) {
-                return [
+            ->keyBy('date');
+
+        $daysInMonth = \Illuminate\Support\Carbon::createFromDate($year, $month, 1)->daysInMonth;
+        $resultLogs = collect();
+
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+            $dateStr = sprintf('%04d-%02d-%02d', $year, $month, $d);
+            
+            if ($logs->has($dateStr)) {
+                $att = $logs->get($dateStr);
+                $resultLogs->push([
                     'id' => $att->id,
                     'date' => $att->date,
                     'shift' => $att->shift,
@@ -242,10 +254,24 @@ class UserController extends Controller
                     'clock_in' => $att->clock_in ? \Illuminate\Support\Carbon::parse($att->clock_in)->format('H:i') : null,
                     'clock_out' => $att->clock_out ? \Illuminate\Support\Carbon::parse($att->clock_out)->format('H:i') : null,
                     'notes' => $att->notes,
-                ];
-            });
+                ]);
+            } else {
+                $holidayCheck = \App\Services\HolidayService::isHoliday($dateStr, $shift);
+                if ($holidayCheck['is_holiday']) {
+                    $resultLogs->push([
+                        'id' => null,
+                        'date' => $dateStr,
+                        'shift' => $shift,
+                        'status' => $holidayCheck['type'],
+                        'clock_in' => null,
+                        'clock_out' => null,
+                        'notes' => $holidayCheck['reason'],
+                    ]);
+                }
+            }
+        }
 
-        return response()->json($logs);
+        return response()->json($resultLogs);
     }
 
     /**

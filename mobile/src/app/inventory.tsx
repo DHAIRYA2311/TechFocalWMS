@@ -36,31 +36,22 @@ const { width } = Dimensions.get('window');
 const isTablet = width > 600;
 
 interface InventoryItem {
-  id: string; // SKU
+  id: number;
+  sku: string;
   name: string;
   category: string;
   stock: number;
   unit: string;
-  reorder: number;
+  reorder_level: number;
   location: string;
 }
 
 const CATEGORIES: Record<string, { label: string; color: string }> = {
   raw_materials: { label: 'Raw Materials', color: '#2563eb' },
-  tools: { label: 'Tools & Tooling', color: '#10b981' },
+  tools: { label: 'Tools', color: '#10b981' },
   consumables: { label: 'Consumables', color: '#f59e0b' },
-  hardware: { label: 'Hardware Components', color: '#ec4899' }
+  hardware: { label: 'Finished Goods', color: '#ec4899' }
 };
-
-const INITIAL_INVENTORY: InventoryItem[] = [
-  { id: 'INV-001', name: 'Mild Steel Plate (10mm)', category: 'raw_materials', stock: 45, unit: 'sheets', reorder: 20, location: 'Rack A-2' },
-  { id: 'INV-002', name: 'Stainless Steel Round Bar (Ø50mm)', category: 'raw_materials', stock: 12, unit: 'meters', reorder: 15, location: 'Rack B-1' },
-  { id: 'INV-003', name: 'CNC Cutting Inserts (APMT 1604)', category: 'tools', stock: 120, unit: 'pcs', reorder: 50, location: 'Cabinet 1' },
-  { id: 'INV-004', name: 'Soluble Cutting Oil (Cooldex)', category: 'consumables', stock: 3, unit: 'barrels', reorder: 5, location: 'Storage Bay' },
-  { id: 'INV-005', name: 'Aluminum Plate (5mm)', category: 'raw_materials', stock: 30, unit: 'sheets', reorder: 10, location: 'Rack A-4' },
-  { id: 'INV-006', name: 'M12 Hex Cap Bolts (Grade 8.8)', category: 'hardware', stock: 850, unit: 'pcs', reorder: 200, location: 'Drawer 3-B' },
-  { id: 'INV-007', name: 'TIG Welding Filler Wire (SS308L)', category: 'consumables', stock: 8, unit: 'kg', reorder: 10, location: 'Welding Section' }
-];
 
 export default function InventoryScreen() {
   const { token, apiUrl } = useAuth();
@@ -68,7 +59,7 @@ export default function InventoryScreen() {
   const insets = useSafeAreaInsets();
 
   // Core State
-  const [inventory, setInventory] = useState<InventoryItem[]>(INITIAL_INVENTORY);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -109,15 +100,31 @@ export default function InventoryScreen() {
     }
   };
 
+  const fetchInventory = async () => {
+    if (!token || !apiUrl) return;
+    setLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const res = await axios.get(`${apiUrl}/api/inventory`, { headers });
+      setInventory(res.data);
+    } catch (err) {
+      console.warn('Failed to fetch inventory:', err);
+      Alert.alert('Error', 'Failed to load inventory.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchUserProfile();
+    fetchInventory();
   }, []);
 
   // Filtered List Memo
   const filteredInventory = useMemo(() => {
     return inventory.filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            item.id.toLowerCase().includes(searchQuery.toLowerCase());
+                            (item.sku && item.sku.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
@@ -126,15 +133,17 @@ export default function InventoryScreen() {
   // KPI calculations
   const stats = useMemo(() => {
     const totalSKUs = inventory.length;
-    const lowStockSKUs = inventory.filter(item => item.stock <= item.reorder).length;
+    const lowStockSKUs = inventory.filter(item => Number(item.stock) <= Number(item.reorder_level)).length;
     return { totalSKUs, lowStockSKUs };
   }, [inventory]);
 
   const getStockStatus = (item: InventoryItem) => {
-    if (item.stock <= item.reorder / 2) {
+    const s = Number(item.stock);
+    const r = Number(item.reorder_level);
+    if (s <= r / 2) {
       return { label: 'CRITICAL STOCK', color: '#ef4444', bgColor: '#fef2f2', borderColor: '#fca5a5' };
     }
-    if (item.stock <= item.reorder) {
+    if (s <= r) {
       return { label: 'LOW STOCK', color: '#f59e0b', bgColor: '#fefbeb', borderColor: '#fde68a' };
     }
     return { label: 'IN STOCK', color: '#10b981', bgColor: '#f0fdf4', borderColor: '#a7f3d0' };
@@ -155,7 +164,7 @@ export default function InventoryScreen() {
     setShowAddModal(true);
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     if (!formSku.trim() || !formName.trim() || !formStock.trim() || !formReorder.trim() || !formLocation.trim()) {
       Alert.alert('Validation Error', 'Please fill in all required fields.');
       return;
@@ -173,25 +182,26 @@ export default function InventoryScreen() {
       return;
     }
 
-    // Check duplicate SKU
-    if (inventory.some(item => item.id.toLowerCase() === formSku.trim().toLowerCase())) {
-      Alert.alert('Validation Error', `An item with SKU ${formSku.trim()} already exists.`);
-      return;
+    try {
+      if (!token) throw new Error('Not authenticated');
+      await axios.post(`${apiUrl}/api/inventory`, {
+        sku: formSku.trim(),
+        name: formName.trim(),
+        category: formCategory,
+        stock: stockVal,
+        unit: formUnit.trim(),
+        reorder_level: reorderVal,
+        location: formLocation.trim()
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchInventory();
+      setShowAddModal(false);
+      Alert.alert('Success', `Part registered successfully.`);
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Error', err.response?.data?.message || 'Failed to register part.');
     }
-
-    const newItem: InventoryItem = {
-      id: formSku.trim().toUpperCase(),
-      name: formName.trim(),
-      category: formCategory,
-      stock: stockVal,
-      unit: formUnit.trim().toLowerCase(),
-      reorder: reorderVal,
-      location: formLocation.trim()
-    };
-
-    setInventory(prev => [newItem, ...prev]);
-    setShowAddModal(false);
-    Alert.alert('Success', `Part ${newItem.id} registered successfully.`);
   };
 
   const handleOpenAdjustStock = (item: InventoryItem) => {
@@ -204,27 +214,49 @@ export default function InventoryScreen() {
     setShowAdjustModal(true);
   };
 
-  const handleSaveStockAdjustment = () => {
+  const handleSaveStockAdjustment = async () => {
     if (!selectedAdjustItem) return;
 
     const newVal = parseFloat(adjustStockVal);
-    if (isNaN(newVal) || newVal < 0) {
-      Alert.alert('Validation Error', 'Please enter a valid stock quantity.');
+    if (isNaN(newVal) || newVal <= 0) {
+      Alert.alert('Validation Error', 'Please enter a valid stock quantity to add.');
       return;
     }
 
-    setInventory(prev => {
-      return prev.map(item => {
-        if (item.id === selectedAdjustItem.id) {
-          return { ...item, stock: newVal };
-        }
-        return item;
+    try {
+      await axios.post(`${apiUrl}/api/inventory/${selectedAdjustItem.id}/restock`, {
+        quantity: newVal
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-    });
+      fetchInventory();
+      setShowAdjustModal(false);
+      setSelectedAdjustItem(null);
+      Alert.alert('Success', 'Stock level updated successfully.');
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert('Error', err.response?.data?.message || 'Failed to update stock.');
+    }
+  };
 
-    setShowAdjustModal(false);
-    setSelectedAdjustItem(null);
-    Alert.alert('Success', 'Stock level updated successfully.');
+  const handleDeleteItem = async (item: InventoryItem) => {
+    Alert.alert('Confirm Delete', `Are you sure you want to delete ${item.name}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { 
+        text: 'Delete', 
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await axios.delete(`${apiUrl}/api/inventory/${item.id}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchInventory();
+          } catch (err: any) {
+            Alert.alert('Error', err.response?.data?.message || 'Failed to delete item.');
+          }
+        }
+      }
+    ]);
   };
 
   return (
@@ -330,7 +362,7 @@ export default function InventoryScreen() {
                   activeOpacity={canManage ? 0.8 : 1}
                 >
                   <View style={styles.itemHeader}>
-                    <Text style={styles.itemSku}>{item.id}</Text>
+                    <Text style={styles.itemSku}>{item.sku}</Text>
                     <View style={[styles.statusBadge, { backgroundColor: status.bgColor, borderColor: status.borderColor }]}>
                       <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.label}</Text>
                     </View>
@@ -359,14 +391,20 @@ export default function InventoryScreen() {
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.reorderLabel}>Reorder Point</Text>
-                      <Text style={styles.reorderValue}>{item.reorder} {item.unit}</Text>
+                      <Text style={styles.reorderValue}>{item.reorder_level} {item.unit}</Text>
                     </View>
                   </View>
 
                   {canManage && (
-                    <TouchableOpacity style={styles.adjustTriggerBtn} onPress={() => handleOpenAdjustStock(item)}>
-                      <Text style={styles.adjustTriggerText}>Adjust stock count</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+                      <TouchableOpacity style={[styles.adjustTriggerBtn, { flex: 1 }]} onPress={() => handleOpenAdjustStock(item)}>
+                        <Plus size={16} color="#2563eb" />
+                        <Text style={styles.adjustTriggerText}>Restock</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.adjustTriggerBtn, { flex: 0.5, borderColor: '#fee2e2', backgroundColor: '#fef2f2' }]} onPress={() => handleDeleteItem(item)}>
+                        <Lucide.Trash2 size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </TouchableOpacity>
               );
@@ -389,7 +427,7 @@ export default function InventoryScreen() {
           <View style={styles.dialogOverlay}>
             <View style={styles.dialogContent}>
               <View style={styles.dialogHeader}>
-                <Text style={styles.dialogTitle}>Adjust Stock: {selectedAdjustItem.id}</Text>
+                <Text style={styles.dialogTitle}>Restock: {selectedAdjustItem.sku}</Text>
                 <TouchableOpacity 
                   style={styles.dialogCloseBtn} 
                   onPress={() => {
@@ -404,7 +442,8 @@ export default function InventoryScreen() {
               <View style={styles.dialogBody}>
                 <Text style={styles.dialogItemName}>{selectedAdjustItem.name}</Text>
                 
-                <Text style={styles.dialogLabel}>Current Stock Quantity</Text>
+                <Text style={styles.dialogLabel}>Current Stock Quantity: {selectedAdjustItem.stock} {selectedAdjustItem.unit}</Text>
+                <Text style={[styles.dialogLabel, { marginTop: 12 }]}>Add Stock (+)</Text>
                 <View style={styles.quantityEditorRow}>
                   <TouchableOpacity 
                     style={styles.adjustMathBtn}
@@ -436,7 +475,7 @@ export default function InventoryScreen() {
 
                 <TouchableOpacity style={styles.dialogSaveBtn} onPress={handleSaveStockAdjustment}>
                   <Check size={16} color="#ffffff" style={{ marginRight: 6 }} />
-                  <Text style={styles.dialogSaveBtnText}>Confirm Count</Text>
+                  <Text style={styles.dialogSaveBtnText}>Confirm Restock</Text>
                 </TouchableOpacity>
               </View>
             </View>

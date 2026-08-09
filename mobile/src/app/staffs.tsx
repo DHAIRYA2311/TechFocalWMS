@@ -285,10 +285,18 @@ export default function StaffsScreen() {
           style={[styles.calendarDayCell, { backgroundColor: cellBg, borderColor: borderCol }]}
           onPress={() => {
             if (log) {
-              Alert.alert(
-                `Day ${d} Log`,
-                `Status: ${log.status.toUpperCase()}\nClock In: ${log.clock_in || 'N/A'}\nClock Out: ${log.clock_out || 'N/A'}\nRemarks: ${log.notes || 'No notes'}`
-              );
+              if (log.status === 'holiday' || log.status === 'weekly_off') {
+                const label = log.status === 'holiday' ? 'Holiday' : 'Weekly Off';
+                Alert.alert(
+                  `Day ${d} Log`,
+                  `Status: ${label}\nReason: ${log.notes || label}\nAttendance: Not Required`
+                );
+              } else {
+                Alert.alert(
+                  `Day ${d} Log`,
+                  `Status: ${log.status.toUpperCase()}\nClock In: ${log.clock_in || 'N/A'}\nClock Out: ${log.clock_out || 'N/A'}\nRemarks: ${log.notes || 'No notes'}`
+                );
+              }
             } else {
               Alert.alert(`Day ${d}`, 'No attendance logs registered for this date.');
             }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\User;
 use App\Services\PushNotificationService;
+use App\Services\HolidayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -79,8 +80,28 @@ class AttendanceController extends Controller
                 ->get()
                 ->keyBy('user_id');
 
-            $result = $users->map(function ($user) use ($attendances) {
+            $holidayCheck = HolidayService::isHoliday($date, $shift);
+
+            $result = $users->map(function ($user) use ($attendances, $holidayCheck) {
                 $att = $attendances->get($user->id);
+                
+                if (!$att && $holidayCheck['is_holiday']) {
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'phone' => $user->phone,
+                        'attendance' => [
+                            'id' => null,
+                            'status' => $holidayCheck['type'], // 'holiday' or 'weekly_off'
+                            'clock_in' => null,
+                            'clock_out' => null,
+                            'notes' => $holidayCheck['reason'],
+                        ]
+                    ];
+                }
+
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
@@ -108,6 +129,37 @@ class AttendanceController extends Controller
                     ->where('shift', $shift)
                     ->get();
                 
+                // Pre-fetch holidays for the month
+                $monthStart = Carbon::create($year, $month, 1)->toDateString();
+                $monthEnd = Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
+                $monthHolidays = \App\Models\Holiday::whereBetween('date', [$monthStart, $monthEnd])
+                    ->where('is_active', true)
+                    ->where(function ($q) use ($shift) {
+                        $q->where('applies_to', 'all')
+                          ->orWhere(function ($subq) use ($shift) {
+                              $subq->where('applies_to', 'shift')
+                                   ->where('target_shift', $shift);
+                          });
+                    })->get()->keyBy('date');
+                    
+                $weeklyOffSetting = \App\Models\Setting::where('key', 'att_weekly_off')->first();
+                $weeklyOffDay = $weeklyOffSetting ? $weeklyOffSetting->value : 'Sunday';
+
+                // Populate user defaults for the month
+                $daysInMonth = Carbon::create($year, $month, 1)->daysInMonth;
+                foreach ($users as $u) {
+                    for ($d = 1; $d <= $daysInMonth; $d++) {
+                        $dateStr = sprintf('%04d-%02d-%02d', $year, $month, $d);
+                        
+                        if (isset($monthHolidays[$dateStr])) {
+                            $matrix[$u->id][$dateStr] = 'holiday';
+                        } else if (strtolower(Carbon::parse($dateStr)->englishDayOfWeek) === strtolower($weeklyOffDay)) {
+                            $matrix[$u->id][$dateStr] = 'weekly_off';
+                        }
+                    }
+                }
+                
+                // Overwrite with actual logged records
                 foreach ($matrixData as $log) {
                     $matrix[$log->user_id][$log->date] = $log->status;
                 }
@@ -192,6 +244,17 @@ class AttendanceController extends Controller
 
         $date = $validated['date'];
         $shift = $validated['shift'] ?? 'day';
+
+        if (\Carbon\Carbon::parse($date)->startOfDay()->greaterThan(\Carbon\Carbon::today())) {
+            return response()->json([
+                'message' => 'Attendance cannot be marked for a future date.'
+            ], 422);
+        }
+
+        $holidayCheck = \App\Services\HolidayService::isHoliday($date, $shift);
+        if ($holidayCheck['is_holiday']) {
+            return response()->json(['message' => 'Attendance cannot be marked on a ' . $holidayCheck['type'] . ' (' . $holidayCheck['reason'] . ').'], 403);
+        }
         
         foreach ($validated['records'] as $record) {
             $existingAtt = Attendance::where('user_id', $record['user_id'])
@@ -249,6 +312,11 @@ class AttendanceController extends Controller
         $resolved = self::resolveShiftAndTime($now);
         $resolvedShift = $resolved['shift'];
         $resolvedDate = $resolved['date'];
+
+        $holidayCheck = \App\Services\HolidayService::isHoliday($resolvedDate, $resolvedShift);
+        if ($holidayCheck['is_holiday']) {
+            return response()->json(['message' => 'Attendance cannot be marked on a ' . $holidayCheck['type'] . ' (' . $holidayCheck['reason'] . ').'], 403);
+        }
 
         // Check if already clocked in for this shift on this date
         $existing = Attendance::where('user_id', $userId)
@@ -310,6 +378,13 @@ class AttendanceController extends Controller
             ->orderBy('date', 'desc')
             ->first();
 
+        if ($att) {
+            $holidayCheck = \App\Services\HolidayService::isHoliday($att->date, $att->shift);
+            if ($holidayCheck['is_holiday']) {
+                return response()->json(['message' => 'Attendance cannot be marked on a ' . $holidayCheck['type'] . ' (' . $holidayCheck['reason'] . ').'], 403);
+            }
+        }
+
         if (!$att) {
             return response()->json(['message' => 'You must check in first.'], 400);
         }
@@ -352,15 +427,25 @@ class AttendanceController extends Controller
         $absent = Attendance::where('date', $today)->where('shift', $shift)->where('status', 'absent')->count();
         $leave = Attendance::where('date', $today)->where('shift', $shift)->where('status', 'leave')->count();
 
+        $holidayCheck = HolidayService::isHoliday($today, $shift);
+        
+        $notMarked = 0;
+        if (!$holidayCheck['is_holiday']) {
+            $notMarked = max(0, $totalActiveStaff - ($present + $absent + $leave));
+        }
+
         return response()->json([
             'today' => [
                 'present' => $present,
                 'late' => $late,
                 'absent' => $absent,
                 'leave' => $leave,
-                'not_marked' => max(0, $totalActiveStaff - ($present + $absent + $leave)),
+                'not_marked' => $notMarked,
                 'total_staff' => $totalActiveStaff,
-                'resolved_shift' => $shift
+                'resolved_shift' => $shift,
+                'is_holiday' => $holidayCheck['is_holiday'],
+                'holiday_reason' => $holidayCheck['reason'],
+                'holiday_type' => $holidayCheck['type'],
             ]
         ]);
     }

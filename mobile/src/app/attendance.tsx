@@ -35,6 +35,7 @@ const FileText = Lucide.FileText as any;
 const RefreshCw = Lucide.RefreshCw as any;
 const Info = Lucide.Info as any;
 const User = Lucide.User as any;
+const AlertCircle = Lucide.AlertCircle as any;
 
 const { width } = Dimensions.get('window');
 const isTablet = width > 600;
@@ -44,7 +45,7 @@ interface AttendanceRecord {
   name: string;
   role: string;
   phone: string | null;
-  status: 'present' | 'late' | 'half_day' | 'absent' | 'leave';
+  status: 'present' | 'late' | 'half_day' | 'absent' | 'leave' | 'holiday' | 'weekly_off';
   clock_in: string;
   clock_out: string;
   notes: string;
@@ -306,8 +307,35 @@ export default function AttendanceScreen() {
 
       {/* Main content */}
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-        {/* KPI Panel */}
-        <View style={styles.kpiContainer}>
+        {(() => {
+          const isFutureDate = selectedDate > getTodayString();
+          if (isFutureDate) {
+            return (
+              <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff1f2', borderRadius: 16, marginVertical: 30, borderWidth: 1, borderColor: '#fecaca', marginHorizontal: 16 }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
+                <Text style={{ fontSize: 20, fontWeight: '700', color: '#991b1b', marginBottom: 8, textAlign: 'center' }}>Future Date Selected</Text>
+                <Text style={{ fontSize: 15, color: '#991b1b', textAlign: 'center', lineHeight: 22 }}>Attendance cannot be marked for a future date. Please select today or a past date.</Text>
+              </View>
+            );
+          }
+
+          const isHoliday = workers.length > 0 && (workers[0].status === 'holiday' || workers[0].status === 'weekly_off');
+          if (isHoliday) {
+            const holidayLabel = workers[0].status === 'holiday' ? 'Holiday' : 'Weekly Off';
+            const holidayReason = workers[0].notes || holidayLabel;
+            return (
+              <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0fdf4', borderRadius: 16, marginVertical: 30, borderWidth: 1, borderColor: '#bbf7d0', marginHorizontal: 16 }}>
+                <Text style={{ fontSize: 54, marginBottom: 16 }}>🎉</Text>
+                <Text style={{ fontSize: 22, fontWeight: '700', color: '#166534', marginBottom: 8 }}>{holidayLabel}</Text>
+                <Text style={{ fontSize: 18, color: '#15803d', fontWeight: '600', marginBottom: 6, textAlign: 'center' }}>{holidayReason}</Text>
+                <Text style={{ fontSize: 15, color: '#166534', textAlign: 'center', marginTop: 16, lineHeight: 22 }}>Attendance is not required today.</Text>
+              </View>
+            );
+          }
+          return (
+            <>
+              {/* KPI Panel */}
+              <View style={styles.kpiContainer}>
           <View style={[styles.kpiCard, { borderColor: '#10b981' }]}>
             <Text style={[styles.kpiVal, { color: '#10b981' }]}>{stats.present}</Text>
             <Text style={styles.kpiLabel}>Present</Text>
@@ -494,32 +522,37 @@ export default function AttendanceScreen() {
             })}
           </View>
         )}
+      </>
+    );
+  })()}
       </ScrollView>
 
-      {/* Sticky Bottom Actions */}
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <TouchableOpacity 
-          style={styles.resetButton} 
-          onPress={fetchAttendance}
-          disabled={loading || saving}
-        >
-          <Text style={styles.resetButtonText}>Reset Page</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.saveButton} 
-          onPress={handleSave}
-          disabled={loading || saving || workers.length === 0}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : (
-            <>
-              <Check size={18} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.saveButtonText}>Save Attendance Register</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+      {/* Save Button */}
+      {!(selectedDate > getTodayString()) && !(workers.length > 0 && (workers[0].status === 'holiday' || workers[0].status === 'weekly_off')) && (
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <TouchableOpacity 
+            style={styles.resetButton} 
+            onPress={fetchAttendance}
+            disabled={loading || saving}
+          >
+            <Text style={styles.resetButtonText}>Reset Page</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.saveButton} 
+            onPress={handleSave}
+            disabled={loading || saving || workers.length === 0}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Check size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.saveButtonText}>Save Attendance Register</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }

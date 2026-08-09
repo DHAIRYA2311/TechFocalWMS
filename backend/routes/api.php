@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\DeliveryChallanController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\MachineController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PayrollController;
@@ -83,9 +84,13 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::post('/user/mfa/deactivate', [ProfileController::class, 'deactivateMfa']);
     Route::get('/user/mfa/recovery-codes', [\App\Http\Controllers\Api\MfaController::class, 'getRecoveryCodes']);
 
-    // Administrative User Routes
-    Route::post('/inventory/{id}/adjust', [InventoryController::class, 'adjust']);
-    Route::post('/inventory/transfer', [InventoryController::class, 'transfer']);
+    // Inventory Routes
+    Route::get('/inventory', [\App\Http\Controllers\InventoryController::class, 'index']);
+    Route::post('/inventory', [\App\Http\Controllers\InventoryController::class, 'store']);
+    Route::delete('/inventory/{id}', [\App\Http\Controllers\InventoryController::class, 'destroy']);
+    Route::post('/inventory/{id}/restock', [\App\Http\Controllers\InventoryController::class, 'restock']);
+    Route::post('/jobs/{id}/consume-inventory', [\App\Http\Controllers\InventoryController::class, 'consume']);
+    Route::get('/jobs/{id}/consumptions', [\App\Http\Controllers\InventoryController::class, 'getJobConsumptions']);
 
     // Secure File Downloads
     Route::post('/files/signed-url', [FileController::class, 'generateSignedUrl']);
@@ -107,6 +112,9 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::post('/attendance/clock-in', [AttendanceController::class, 'clockIn']);
     Route::post('/attendance/clock-out', [AttendanceController::class, 'clockOut']);
     Route::get('/attendance/stats', [AttendanceController::class, 'stats']);
+
+    // Holidays
+    Route::apiResource('holidays', HolidayController::class)->except(['show']);
 
     // Machine Management Routes
     Route::get('/machines', [MachineController::class, 'index']);

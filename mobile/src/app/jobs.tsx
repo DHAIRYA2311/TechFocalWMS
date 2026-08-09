@@ -48,6 +48,7 @@ const Play = Lucide.Play as any;
 const ExternalLink = Lucide.ExternalLink as any;
 const Trash2 = Lucide.Trash2 as any;
 const Upload = Lucide.Upload as any;
+const Package = Lucide.Package as any;
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width > 600;
@@ -184,6 +185,13 @@ export default function JobsScreen() {
   const [editingDrawingPath, setEditingDrawingPath] = useState<string | null>(null);
   const [mobileNewName, setMobileNewName] = useState('');
 
+  // Inventory Consumption
+  const [showConsumeModal, setShowConsumeModal] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [consumeData, setConsumeData] = useState({ inventory_item_id: '', quantity: '' });
+  const [consuming, setConsuming] = useState(false);
+  const [jobConsumptions, setJobConsumptions] = useState<any[]>([]);
+
   const fetchJobsData = async (fetchArchived = showArchived) => {
     if (!token || !apiUrl) return;
     setLoading(true);
@@ -212,11 +220,22 @@ export default function JobsScreen() {
     fetchJobsData();
   }, []);
 
-  const handleOpenDetails = (job: JobCard) => {
+  const handleOpenDetails = async (job: JobCard) => {
     setSelectedJob(job);
     setTempWorkerId(job.assigned_worker_id);
     setTempMachineId(job.machine_id);
     setTempRemarks(job.remarks || '');
+    
+    // Fetch consumptions
+    if (token && apiUrl) {
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        const res = await offlineGet(`${apiUrl}/api/jobs/${job.id}/consumptions`, { headers });
+        setJobConsumptions(res.data);
+      } catch (e) {
+        console.warn('Failed to load job consumptions', e);
+      }
+    }
   };
 
   const handleCloseDetails = () => {
@@ -449,15 +468,53 @@ export default function JobsScreen() {
       const updatedJob = {
         ...selectedJob,
         drawing_path: res.data.job.drawing_path
-      } as JobCard;
+} as JobCard;
       setSelectedJob(updatedJob);
       setEditingDrawingPath(null);
       fetchJobsData();
     } catch (err: any) {
-      console.error('Failed to rename mobile drawing:', err);
+      console.error(err);
       Alert.alert('Error', err.response?.data?.message || 'Failed to rename drawing.');
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const openConsumeModal = async () => {
+    if (!token || !apiUrl) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const res = await offlineGet(`${apiUrl}/api/inventory`, { headers });
+      setInventoryItems(res.data);
+      setConsumeData({ inventory_item_id: '', quantity: '' });
+      setShowConsumeModal(true);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to load inventory for consumption.');
+    }
+  };
+
+  const handleConsumeMaterial = async () => {
+    if (!selectedJob || !token || !apiUrl) return;
+    if (!consumeData.inventory_item_id || !consumeData.quantity) {
+      Alert.alert('Error', 'Please select an item and enter a quantity.');
+      return;
+    }
+    setConsuming(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      await offlinePost(`${apiUrl}/api/jobs/${selectedJob.id}/consume-inventory`, consumeData, { headers }, false);
+      
+      Alert.alert('Success', 'Material consumption logged successfully.');
+      setShowConsumeModal(false);
+      setConsumeData({ inventory_item_id: '', quantity: '' });
+      
+      // refresh consumptions
+      const res = await offlineGet(`${apiUrl}/api/jobs/${selectedJob.id}/consumptions`, { headers });
+      setJobConsumptions(res.data);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to log consumption.');
+    } finally {
+      setConsuming(false);
     }
   };
 
@@ -1117,20 +1174,30 @@ export default function JobsScreen() {
                     )}
 
                     {selectedJob.status === 'in_progress' && (
-                      <TouchableOpacity
-                        style={[styles.statusTransitionBtn, { backgroundColor: '#7c3aed' }]}
-                        onPress={() => handleUpdateStatus('inspection')}
-                        disabled={statusUpdating}
-                      >
-                        {statusUpdating ? (
-                          <ActivityIndicator size="small" color="#ffffff" />
-                        ) : (
-                          <>
-                            <CheckCircle size={16} color="#ffffff" style={{ marginRight: 6 }} />
-                            <Text style={styles.statusTransitionBtnText}>Submit to QC Inspection</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
+                      <View style={{ gap: 12 }}>
+                        <TouchableOpacity
+                          style={[styles.statusTransitionBtn, { backgroundColor: '#7c3aed' }]}
+                          onPress={() => handleUpdateStatus('inspection')}
+                          disabled={statusUpdating}
+                        >
+                          {statusUpdating ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          ) : (
+                            <>
+                              <CheckCircle size={16} color="#ffffff" style={{ marginRight: 6 }} />
+                              <Text style={styles.statusTransitionBtnText}>Submit to QC Inspection</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.statusTransitionBtn, { backgroundColor: '#ea580c' }]}
+                          onPress={openConsumeModal}
+                        >
+                          <Package size={16} color="#ffffff" style={{ marginRight: 6 }} />
+                          <Text style={styles.statusTransitionBtnText}>Consume Material</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
 
                     {selectedJob.status === 'inspection' && (
@@ -1180,23 +1247,128 @@ export default function JobsScreen() {
                   </View>
 
                   {/* Remarks Input */}
-                  <View style={[styles.fieldGroup, { marginTop: 16 }]}>
-                    <Text style={styles.fieldLabel}>Supervisor Remarks</Text>
+                  <View style={styles.remarksSection}>
+                    <Text style={styles.sectionHeader}>Supervisor Remarks</Text>
                     <TextInput
                       style={styles.remarksInput}
-                      placeholder="Calibrations, tooling overrides, tolerances etc..."
+                      multiline
+                      numberOfLines={3}
                       value={tempRemarks}
                       onChangeText={setTempRemarks}
-                      multiline={true}
-                      numberOfLines={3}
-                      textAlignVertical="top"
+                      placeholder="Add notes for operators..."
                       placeholderTextColor="#94a3b8"
                       onBlur={() => handleUpdateStatus(selectedJob.status, tempRemarks)}
                     />
-                    <Text style={styles.fieldLabelHelp}>Focus away from input to save remarks.</Text>
                   </View>
+
+                  {/* Consumption History */}
+                  <View style={styles.remarksSection}>
+                    <Text style={styles.sectionHeader}>Consumption History ({jobConsumptions.length})</Text>
+                    {jobConsumptions.length === 0 ? (
+                      <Text style={{ fontSize: 13, color: '#94a3b8', fontStyle: 'italic', marginTop: 4 }}>No material consumed for this job yet.</Text>
+                    ) : (
+                      <View style={{ marginTop: 8, gap: 8 }}>
+                        {jobConsumptions.map((cons) => (
+                          <View key={cons.id} style={{ backgroundColor: '#f8fafc', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <Text style={{ fontWeight: '600', fontSize: 13, color: '#334155' }}>{cons.inventory_item?.name}</Text>
+                              <Text style={{ fontWeight: '700', fontSize: 13, color: '#2563eb' }}>{cons.quantity} {cons.inventory_item?.unit}</Text>
+                            </View>
+                            <Text style={{ fontSize: 11, color: '#64748b' }}>
+                              Logged by {cons.user?.name || 'System'} at {new Date(cons.created_at).toLocaleString()}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
                 </View>
               </ScrollView>
+              
+              {/* Consume Goods Modal */}
+              {showConsumeModal && (
+                <Modal
+                  visible={true}
+                  animationType="slide"
+                  onRequestClose={() => setShowConsumeModal(false)}
+                  transparent={true}
+                >
+                  <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { height: '70%' }]}>
+                      <View style={styles.modalHeader}>
+                        <View style={styles.modalHeaderInfo}>
+                          <Text style={styles.modalTitle}>Consume Goods</Text>
+                          <Text style={styles.modalSubtitle}>Log material usage for Job Card</Text>
+                        </View>
+                        <TouchableOpacity style={styles.modalCloseButton} onPress={() => setShowConsumeModal(false)}>
+                          <X size={20} color="#475569" />
+                        </TouchableOpacity>
+                      </View>
+
+                      <ScrollView contentContainerStyle={styles.modalScrollBody} keyboardShouldPersistTaps="handled">
+                        <View style={styles.modalSectionCard}>
+                          
+                          <View style={{ marginBottom: 20, padding: 12, backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <Text style={{ color: '#64748b', fontSize: 12 }}>Job Card:</Text>
+                              <Text style={{ fontWeight: '700', fontSize: 12, color: '#0f172a' }}>{selectedJob?.job_card_number}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                              <Text style={{ color: '#64748b', fontSize: 12 }}>Required Qty:</Text>
+                              <Text style={{ fontWeight: '700', fontSize: 12, color: '#0f172a' }}>{selectedJob?.quantity} {selectedJob?.po_item?.unit}</Text>
+                            </View>
+                          </View>
+
+                          <Text style={styles.fieldLabel}>Select Material to Consume *</Text>
+                          <View style={{ maxHeight: 150, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+                            <ScrollView nestedScrollEnabled>
+                              {inventoryItems.map(item => (
+                                <TouchableOpacity 
+                                  key={item.id} 
+                                  style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: consumeData.inventory_item_id === item.id.toString() ? '#eff6ff' : '#ffffff', opacity: item.stock <= 0 ? 0.5 : 1 }}
+                                  onPress={() => item.stock > 0 && setConsumeData({...consumeData, inventory_item_id: item.id.toString()})}
+                                  disabled={item.stock <= 0}
+                                >
+                                  <Text style={{ fontSize: 13, color: consumeData.inventory_item_id === item.id.toString() ? '#2563eb' : '#334155', fontWeight: consumeData.inventory_item_id === item.id.toString() ? '700' : '500' }}>
+                                    {item.sku} - {item.name} ({item.stock} {item.unit} avail)
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+
+                          <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Quantity to Consume *</Text>
+                          <TextInput
+                            style={styles.inputField}
+                            placeholder="e.g. 5"
+                            value={consumeData.quantity}
+                            onChangeText={v => setConsumeData({...consumeData, quantity: v})}
+                            keyboardType="numeric"
+                            placeholderTextColor="#94a3b8"
+                          />
+                          
+                          <TouchableOpacity 
+                            style={[styles.formSubmitBtn, { marginTop: 24, backgroundColor: '#ea580c' }]} 
+                            onPress={handleConsumeMaterial}
+                            disabled={consuming}
+                          >
+                            {consuming ? (
+                              <ActivityIndicator size="small" color="#ffffff" />
+                            ) : (
+                              <>
+                                <Package size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                                <Text style={styles.formSubmitBtnText}>Confirm Consumption</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+
+                        </View>
+                      </ScrollView>
+                    </View>
+                  </View>
+                </Modal>
+              )}
             </KeyboardAvoidingView>
           </View>
         </Modal>
@@ -2182,6 +2354,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#2563eb',
+  },
+  remarksSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  inputField: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 13,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+  },
+  formSubmitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  formSubmitBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });
 
