@@ -47,7 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 }
 
                 $statusCode = 500;
-                $message = 'An unexpected server error occurred. Our team has been notified.';
+                $message = 'An unexpected server error occurred. Our team has been notified. Error details: ' . $e->getMessage();
 
                 if ($e instanceof HttpExceptionInterface) {
                     $statusCode = $e->getStatusCode();

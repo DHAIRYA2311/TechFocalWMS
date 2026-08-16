@@ -179,14 +179,14 @@ class JobController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
-        $job = JobCard::findOrFail($id);
-
-        $validated = $request->validate([
-            'status' => 'required|string|in:pending,in_progress,inspection,completed,cancelled',
-            'remarks' => 'nullable|string|max:2000',
-        ]);
-
         try {
+            $job = JobCard::findOrFail($id);
+
+            $validated = $request->validate([
+                'status' => 'required|string|in:pending,in_progress,inspection,completed,cancelled',
+                'remarks' => 'nullable|string|max:2000',
+            ]);
+
             $machineId = $job->machine_id;
 
             $updateData = [
