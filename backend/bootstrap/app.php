@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             \App\Http\Middleware\RequireWhitelistedIp::class,
             \App\Http\Middleware\QueryTokenToBearer::class,
+            \App\Http\Middleware\ForceJsonResponse::class,
         ]);
         $middleware->alias([
             'throttle.auth.exponential' => \App\Http\Middleware\ExponentialAuthThrottle::class,
