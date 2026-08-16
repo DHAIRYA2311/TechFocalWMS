@@ -28,10 +28,11 @@ export function useRealTime(resource: string, callback: (event: any) => void) {
         let host = cleanUrl.split(':')[0]; // Get IP address / domain name
         host = host.split('/')[0]; // Strip path
 
-        const port = '8080';
-        const key = 'x0e2wapuiluowxd89e3k';
         const isSecure = apiUrl.startsWith('https');
         const wsScheme = isSecure ? 'wss' : 'ws';
+        // Use default port for secure connections (Render routes 443 internally)
+        const port = isSecure ? '443' : '8080';
+        const key = 'x0e2wapuiluowxd89e3k';
 
         const wsUrl = `${wsScheme}://${host}:${port}/app/${key}?protocol=7&client=js&version=7.0.3&flash=false`;
         

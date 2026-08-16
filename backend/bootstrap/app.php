@@ -41,6 +41,10 @@ return Application::configure(basePath: dirname(__DIR__))
                     return response()->json(['message' => 'Unauthenticated.'], 401);
                 }
 
+                if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                    return response()->json(['message' => 'Resource not found.'], 404);
+                }
+
                 $statusCode = 500;
                 $message = 'An unexpected server error occurred. Our team has been notified.';
 

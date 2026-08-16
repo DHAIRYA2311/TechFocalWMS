@@ -239,9 +239,9 @@ class JobController extends Controller
                 'job' => $job
             ]);
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             return response()->json([
-                'message' => 'Failed to update job status: ' . $e->getMessage()
+                'message' => 'Failed to update job status: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine()
             ], 500);
         }
     }
