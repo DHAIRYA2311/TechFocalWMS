@@ -105,20 +105,33 @@ body {
   display: flex;
   min-height: 100vh;
   width: 100vw;
-  background-color: var(--color-bg-base);
+  background-image: url('/login-bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
   overflow: hidden;
+  position: relative;
+}
+
+/* On mobile, add a dark overlay over the whole screen */
+.login-split-layout::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.7);
+  z-index: 0;
 }
 
 .login-left {
   flex: 1;
   position: relative;
-  display: none;
-  background-image: url('/login-bg.jpg');
-  background-size: cover;
-  background-position: center;
+  display: none; /* hidden on mobile */
 }
 
 @media (min-width: 900px) {
+  .login-split-layout::before {
+    display: none; /* Hide global overlay on desktop */
+  }
   .login-left {
     display: flex;
     flex-direction: column;
@@ -166,13 +179,36 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background-color: var(--color-card-bg);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 1;
+}
+
+@media (min-width: 900px) {
+  .login-right {
+    background-color: var(--color-card-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .login-form-container {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   perspective: 1000px; /* For 3D flip */
+  background: #ffffff;
+  padding: 32px;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+@media (min-width: 900px) {
+  .login-form-container {
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+  }
 }
 
 .login-flipper {
