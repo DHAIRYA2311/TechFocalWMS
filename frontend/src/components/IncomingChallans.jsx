@@ -21,7 +21,9 @@ import {
   Printer,
   Download,
   Save,
-  X
+  X,
+  Edit2,
+  Info
 } from 'lucide-react';
 
 export default function IncomingChallans() {
@@ -262,8 +264,8 @@ export default function IncomingChallans() {
     }
   };
 
-  // Upload and parse Challan PDF
-  const handlePdfUpload = async (e) => {
+  // Upload and parse Challan PDF or Image via AI
+  const handleAiScanUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -274,8 +276,8 @@ export default function IncomingChallans() {
     formData.append('file', file);
 
     try {
-      // 1. Upload and run parse on backend
-      const response = await axios.post('/api/incoming-challans/parse', formData, {
+      // 1. Upload and run AI extraction on backend
+      const response = await axios.post('/api/incoming-challans/extract-ai', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -306,18 +308,20 @@ export default function IncomingChallans() {
             ordered_quantity: poItem.quantity,
             received_qty: poItem.received_qty || 0,
             quantity_received: parsedItem ? Math.min(parsedItem.quantity_received, Math.max(0, maxAllowed)) : 0,
+            validation_status: parsedItem ? parsedItem.validation_status : null,
+            validation_message: parsedItem ? parsedItem.validation_message : null,
           };
         });
 
         setItems(mappedItems);
-        setFeedback({ type: 'success', message: `Matched with Purchase Order #${poRes.data.po_number} successfully.` });
+        setFeedback({ type: 'success', message: `AI Extraction Complete! Matched with Purchase Order #${poRes.data.po_number}. Please review the quantities.` });
       } else {
-        setFeedback({ type: 'warning', message: 'Challan PDF parsed, but we could not find a matching PO number in the document. Please select the Purchase Order manually.' });
+        setFeedback({ type: 'warning', message: 'Document scanned, but no matching PO could be found. Please select the Purchase Order manually.' });
       }
 
     } catch (err) {
       console.error(err);
-      setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to parse Challan PDF.' });
+      setFeedback({ type: 'danger', message: err.response?.data?.message || 'Failed to scan document with AI.' });
     } finally {
       setUploading(false);
     }
@@ -706,7 +710,7 @@ export default function IncomingChallans() {
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: '700' }}>Log Material Receipt (Incoming Challan)</h2>
               <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                Upload customer challan PDF to auto-fill, or manually log batch components.
+                Scan a delivery challan image/PDF to auto-fill via AI, or manually log items.
               </p>
             </div>
           </div>
@@ -736,27 +740,28 @@ export default function IncomingChallans() {
           {/* LEFT FORM PANEL */}
           <div className="card" style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 220px)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
             
-            {/* PDF Uploader */}
-            <div style={{ border: '2px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '16px', textAlign: 'center', backgroundColor: 'var(--color-bg-base)', transition: 'all 0.15s ease' }}>
+            {/* AI Scanner / File Uploader */}
+            <div style={{ border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)', padding: '16px', textAlign: 'center', backgroundColor: '#f0f9ff', transition: 'all 0.15s ease' }}>
               <input 
                 type="file" 
                 id="challan-pdf" 
-                accept=".pdf" 
-                onChange={handlePdfUpload} 
+                accept=".pdf,image/png,image/jpeg,image/jpg" 
+                onChange={handleAiScanUpload} 
                 style={{ display: 'none' }}
                 disabled={uploading || saving}
               />
               <label htmlFor="challan-pdf" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                 {uploading ? (
                   <>
-                    <Loader2 size={24} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
-                    <span style={{ fontSize: '13px', fontWeight: '600' }}>Extracting Challan Text...</span>
+                    <Loader2 size={32} className="animate-spin text-primary" style={{ color: 'var(--color-primary)' }} />
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--color-primary)' }}>Scanning Document with AI...</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Please wait while we extract the details.</span>
                   </>
                 ) : (
                   <>
-                    <Upload size={24} style={{ color: 'var(--color-primary)' }} />
-                    <span style={{ fontSize: '13px', fontWeight: '600' }}>Upload Customer Challan PDF</span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Auto-populates items, PO references, and counts</span>
+                    <Upload size={32} style={{ color: 'var(--color-primary)' }} />
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--color-primary)' }}>Scan with AI 🪄</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Click to upload Image or PDF</span>
                   </>
                 )}
               </label>
@@ -864,17 +869,24 @@ export default function IncomingChallans() {
                                   Fully Received
                                 </span>
                               ) : (
-                                <input 
-                                  type="number" 
-                                  step="0.01"
-                                  className="form-input" 
-                                  value={item.quantity_received}
-                                  onChange={(e) => handleQtyChange(idx, e.target.value)}
-                                  style={{ padding: '4px 6px', fontSize: '11px', textAlign: 'right', width: '80px', display: 'inline-block' }}
-                                  disabled={saving || uploading}
-                                  max={maxAllowed}
-                                  min="0"
-                                />
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                                  {item.validation_status && item.validation_status !== 'ok' && (
+                                    <span title={item.validation_message} style={{ color: item.validation_status === 'warning' ? '#f59e0b' : '#3b82f6', cursor: 'help' }}>
+                                      {item.validation_status === 'warning' ? <AlertTriangle size={14} /> : <Info size={14} />}
+                                    </span>
+                                  )}
+                                  <input 
+                                    type="number" 
+                                    step="0.01"
+                                    className="form-input" 
+                                    value={item.quantity_received}
+                                    onChange={(e) => handleQtyChange(idx, e.target.value)}
+                                    style={{ padding: '4px 6px', fontSize: '11px', textAlign: 'right', width: '80px', display: 'inline-block' }}
+                                    disabled={saving || uploading}
+                                    max={maxAllowed}
+                                    min="0"
+                                  />
+                                </div>
                               )}
                             </td>
                           </tr>

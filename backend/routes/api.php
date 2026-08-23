@@ -173,6 +173,7 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::delete('/purchase-orders/{id}', [PurchaseOrderController::class, 'destroy']);
 
     // Incoming Challan Routes
+    Route::post('/incoming-challans/extract-ai', [App\Http\Controllers\Api\ChallanExtractionController::class, 'extractIncoming']);
     Route::get('/incoming-challans', [IncomingChallanController::class, 'index']);
     Route::get('/incoming-challans/{id}', [IncomingChallanController::class, 'show']);
     Route::post('/incoming-challans/parse', [IncomingChallanController::class, 'parse']);

@@ -1,0 +1,68 @@
+{
+  "name": "Incoming Challan OCR Extractor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-incoming-challan",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 200, 300 ],
+      "webhookId": "extract-incoming-challan"
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": "gpt-4o",
+        "messages": {
+          "messageValues": [
+            {
+              "content": "You are a highly accurate data extraction assistant. Extract the following information from the provided Incoming Challan (Delivery Challan from a supplier). Return ONLY valid JSON matching this schema:\n{\n  \"challan_number\": \"string or null\",\n  \"challan_date\": \"YYYY-MM-DD or null\",\n  \"purchase_order_number\": \"string or null\",\n  \"supplier_name\": \"string or null\",\n  \"items\": [\n    {\n      \"description\": \"string\",\n      \"quantity\": number,\n      \"drawing_number\": \"string or null\",\n      \"unit\": \"string or null\"\n    }\n  ]\n}\n\nDo not invent data. If a field is not present, return null.",
+              "role": "system"
+            },
+            {
+              "content": "Extract the data from this document.",
+              "role": "user"
+            }
+          ]
+        },
+        "vision": true,
+        "imageBinaryPropertyName": "data",
+        "jsonOutput": true
+      },
+      "id": "openai-node",
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [ 460, 300 ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
