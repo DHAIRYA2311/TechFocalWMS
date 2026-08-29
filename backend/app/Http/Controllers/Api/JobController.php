@@ -217,7 +217,7 @@ class JobController extends Controller
             } else {
                 if ($job->status === 'in_progress') {
                     if ($job->machining_started_at) {
-                        $duration = \Carbon\Carbon::parse($job->machining_started_at)->diffInSeconds(now());
+                        $duration = (int) \Carbon\Carbon::parse($job->machining_started_at)->diffInSeconds(now());
                         $updateData['machining_duration_seconds'] = $job->machining_duration_seconds + $duration;
                         $updateData['machining_started_at'] = null;
                     }
