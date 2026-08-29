@@ -144,6 +144,7 @@ export default function ChallansScreen() {
   // Photo proof states
   const [attachedImageUri, setAttachedImageUri] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [scanningAI, setScanningAI] = useState(false);
   const [formPdfPath, setFormPdfPath] = useState<string | null>(null);
 
   const canManage = userRole && ['admin', 'partner', 'manager', 'supervisor'].includes(userRole);
@@ -244,6 +245,7 @@ export default function ChallansScreen() {
   const uploadImage = async (uri: string) => {
     if (!token || !apiUrl) return;
     setUploadingImage(true);
+    setScanningAI(true);
     setAttachedImageUri(uri);
     
     try {
@@ -261,21 +263,61 @@ export default function ChallansScreen() {
       const headers = {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'multipart/form-data',
+        'Accept': 'application/json',
       };
 
-      const response = await axios.post(`${apiUrl}/api/incoming-challans/parse`, formData, { headers });
+      // Call the AI extraction endpoint
+      const response = await axios.post(`${apiUrl}/api/incoming-challans/extract-ai`, formData, { headers });
+      const data = response.data;
       
-      if (response.data && response.data.pdf_path) {
-        setFormPdfPath(response.data.pdf_path);
-        Alert.alert('Uploaded', 'Photo proof successfully uploaded and linked.');
+      if (data && data.pdf_path) {
+        setFormPdfPath(data.pdf_path);
+        
+        // Auto-fill Challan Details
+        if (data.challan_number) setFormChallanNumber(data.challan_number);
+        if (data.challan_date) setFormChallanDate(data.challan_date);
+
+        // If PO is matched by AI, fetch the PO details and pre-fill quantities
+        if (data.purchase_order_id) {
+          setSelectedPoId(data.purchase_order_id);
+          
+          // Fetch the full PO details to get all items
+          const poResponse = await offlineGet(`${apiUrl}/api/purchase-orders/${data.purchase_order_id}`, { headers });
+          const poDetails = poResponse.data;
+          setSelectedPoDetails(poDetails);
+          
+          // Map extracted quantities
+          const initialQtys: Record<number, string> = {};
+          poDetails.items?.forEach((item: any) => {
+            // Find if AI extracted this item by matching po_item_id
+            const extractedItem = data.items?.find((ei: any) => 
+              (ei.po_item_id && ei.po_item_id === item.id) || 
+              (!ei.po_item_id && ei.item_code === item.item_code)
+            );
+            
+            const maxAllowed = item.quantity - (item.received_qty || 0);
+            if (extractedItem && extractedItem.quantity_received) {
+              // Ensure we don't exceed max allowed
+              const finalQty = Math.min(extractedItem.quantity_received, Math.max(0, maxAllowed));
+              initialQtys[item.id] = finalQty > 0 ? finalQty.toString() : '0';
+            } else {
+              initialQtys[item.id] = '0';
+            }
+          });
+          setFormItemsQty(initialQtys);
+
+          Alert.alert('AI Scan Complete', `Matched with Purchase Order #${poDetails.po_number}. Please review the extracted quantities.`);
+        } else {
+          Alert.alert('AI Scan Complete', 'Document scanned successfully, but no matching Purchase Order was found. Please select it manually.');
+        }
       }
     } catch (err: any) {
-      console.error('Photo upload failed:', err);
-      Alert.alert('Error', 'Failed to upload photo proof to workshop server.');
-      setAttachedImageUri(null);
-      setFormPdfPath(null);
+      console.error('Photo AI scan failed:', err.response?.data || err.message);
+      const errMsg = err.response?.data?.message || err.message;
+      Alert.alert('Error', `Server: ${apiUrl}\n\nFailed to scan document with AI service: ${errMsg}\n\nYou can still manually enter the details.`);
     } finally {
       setUploadingImage(false);
+      setScanningAI(false);
     }
   };
 
@@ -889,7 +931,47 @@ export default function ChallansScreen() {
 
             <ScrollView contentContainerStyle={styles.modalScrollBody} keyboardShouldPersistTaps="handled">
               <View style={styles.modalSectionCard}>
-                <Text style={styles.modalCardHeader}>1. Reference Purchase Order</Text>
+                <Text style={styles.modalCardHeader}>1. Smart AI Scan</Text>
+                <Text style={styles.sectionHelperText}>Take a photo of the challan to auto-extract details and quantities.</Text>
+                
+                {scanningAI ? (
+                  <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#8b5cf6" />
+                    <Text style={{ fontSize: 13, color: '#8b5cf6', marginTop: 8, fontWeight: '600' }}>Gemini AI is extracting details...</Text>
+                    <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>This may take a few moments</Text>
+                  </View>
+                ) : uploadingImage ? (
+                  <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#8b5cf6" />
+                    <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Uploading photo proof to server...</Text>
+                  </View>
+                ) : attachedImageUri ? (
+                  <View style={styles.photoPreviewCard}>
+                    <Text style={styles.photoAttachedLabel}>Photo Attached Successfully</Text>
+                    <Text style={styles.photoAttachedFilename} numberOfLines={1}>
+                      {attachedImageUri.split('/').pop()}
+                    </Text>
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={removePhoto}>
+                      <Trash2 size={14} color="#ef4444" style={{ marginRight: 4 }} />
+                      <Text style={styles.removePhotoText}>Remove Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.photoButtonsRow}>
+                    <TouchableOpacity style={[styles.photoButton, { borderColor: '#8b5cf6', backgroundColor: '#f5f3ff' }]} onPress={takePhoto}>
+                      <Camera size={16} color="#8b5cf6" style={{ marginRight: 6 }} />
+                      <Text style={[styles.photoButtonText, { color: '#8b5cf6', fontWeight: '600' }]}>Smart Scan (Camera)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.photoButton, { borderColor: '#8b5cf6', backgroundColor: '#f5f3ff' }]} onPress={pickImage}>
+                      <Image size={16} color="#8b5cf6" style={{ marginRight: 6 }} />
+                      <Text style={[styles.photoButtonText, { color: '#8b5cf6', fontWeight: '600' }]}>Smart Scan (Gallery)</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.modalSectionCard}>
+                <Text style={styles.modalCardHeader}>2. Reference Purchase Order</Text>
                 <TouchableOpacity 
                   style={styles.selectTrigger} 
                   onPress={() => setShowPoSelectorModal(true)}
@@ -933,7 +1015,7 @@ export default function ChallansScreen() {
               {selectedPoDetails && (
                 <>
                   <View style={styles.modalSectionCard}>
-                    <Text style={styles.modalCardHeader}>2. Challan metadata</Text>
+                    <Text style={styles.modalCardHeader}>3. Challan metadata</Text>
                     
                     <Text style={styles.fieldLabel}>Challan / Receipt Number *</Text>
                     <TextInput
@@ -963,39 +1045,6 @@ export default function ChallansScreen() {
                       multiline={true}
                       numberOfLines={2}
                     />
-                  </View>
-
-                  <View style={styles.modalSectionCard}>
-                    <Text style={styles.modalCardHeader}>3. Challan Photo Proof (Optional)</Text>
-                    
-                    {uploadingImage ? (
-                      <View style={{ paddingVertical: 12, alignItems: 'center' }}>
-                        <ActivityIndicator size="small" color="#8b5cf6" />
-                        <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Uploading photo proof to server...</Text>
-                      </View>
-                    ) : attachedImageUri ? (
-                      <View style={styles.photoPreviewCard}>
-                        <Text style={styles.photoAttachedLabel}>Photo Attached Successfully</Text>
-                        <Text style={styles.photoAttachedFilename} numberOfLines={1}>
-                          {attachedImageUri.split('/').pop()}
-                        </Text>
-                        <TouchableOpacity style={styles.removePhotoBtn} onPress={removePhoto}>
-                          <Trash2 size={14} color="#ef4444" style={{ marginRight: 4 }} />
-                          <Text style={styles.removePhotoText}>Remove Photo</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View style={styles.photoButtonsRow}>
-                        <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-                          <Camera size={16} color="#64748b" style={{ marginRight: 6 }} />
-                          <Text style={styles.photoButtonText}>Take Photo</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.photoButton} onPress={pickImage}>
-                          <Image size={16} color="#64748b" style={{ marginRight: 6 }} />
-                          <Text style={styles.photoButtonText}>Upload Image</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
                   </View>
 
                   <View style={styles.modalSectionCard}>

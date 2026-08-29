@@ -299,7 +299,7 @@ export default function IncomingChallans() {
         // Map parsed quantities to PO items
         const mappedItems = poRes.data.items.map(poItem => {
           // Find if this item code was in the parsed challan items
-          const parsedItem = data.items.find(pi => pi.item_code === poItem.item_code);
+          const parsedItem = data.items.find(pi => (pi.po_item_id && pi.po_item_id === poItem.id) || (!pi.po_item_id && pi.item_code === poItem.item_code));
           const maxAllowed = poItem.quantity - (poItem.received_qty || 0);
           return {
             po_item_id: poItem.id,

@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Reveal } from "@/components/site/Reveal";
 import { Counter } from "@/components/site/Counter";
-import aboutImg from "@/assets/about-craft.jpg";
-import shop from "@/assets/gallery-5.jpg";
+import aboutImg from "@/assets/workshop/PHOTO-2024-04-26-13-45-14 2.jpg";
+import shop from "@/assets/workshop/PHOTO-2025-02-20-14-37-15.jpg";
 import { Target, Compass, Heart, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/about")({

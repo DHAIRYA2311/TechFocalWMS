@@ -29,32 +29,82 @@ class ChallanExtractionController extends Controller
         \Storage::disk('public')->putFileAs('drawings', $file, $fileName);
         $relativeUrl = 'storage/drawings/' . $fileName;
 
-        $webhookUrl = env('N8N_WEBHOOK_URL');
+        $geminiApiKey = env('GEMINI_API_KEY');
 
-        if (!$webhookUrl) {
-            // Fallback for testing/development if n8n is not set up
+        if (!$geminiApiKey) {
+            // Fallback for testing/development if API key is not set
             return $this->mockExtraction($relativeUrl);
         }
 
         try {
-            // Send the file to n8n webhook
+            $base64Image = base64_encode(file_get_contents($file->getRealPath()));
+            $mimeType = $file->getMimeType();
+
+            $payload = [
+                'system_instruction' => [
+                    'parts' => [
+                        ['text' => 'You are a highly accurate data extraction assistant. Extract the information from the provided Incoming Challan. Return ONLY valid JSON matching this schema:
+{
+  "challan_number": "string or null",
+  "challan_date": "YYYY-MM-DD or null",
+  "purchase_order_number": "string or null",
+  "supplier_name": "string or null",
+  "items": [
+    {
+      "description": "string",
+      "quantity": 0,
+      "item_code": "string or null",
+      "unit": "string or null"
+    }
+  ]
+}
+Do not invent data. If a field is not present, return null.']
+                    ]
+                ],
+                'contents' => [
+                    [
+                        'parts' => [
+                            ['text' => 'Extract the data from this document.'],
+                            [
+                                'inline_data' => [
+                                    'mime_type' => $mimeType,
+                                    'data' => $base64Image
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                'generationConfig' => [
+                    'response_mime_type' => 'application/json'
+                ]
+            ];
+
             $response = Http::timeout(60)
-                ->attach('data', file_get_contents($file->getRealPath()), $file->getClientOriginalName())
-                ->post($webhookUrl);
+                ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" . $geminiApiKey, $payload);
 
             if ($response->successful()) {
-                $extractedData = $response->json();
+                $geminiResponse = $response->json();
+                $textResponse = $geminiResponse['candidates'][0]['content']['parts'][0]['text'] ?? '{}';
+                
+                // Clean markdown if present
+                $textResponse = str_replace(['```json', '```'], '', $textResponse);
+                $extractedData = json_decode(trim($textResponse), true);
+
+                if (!$extractedData) {
+                    throw new \Exception("Failed to decode JSON from Gemini");
+                }
+
                 $extractedData['pdf_path'] = $relativeUrl;
                 
                 // Process and validate the extracted data against the database
                 return response()->json($this->enrichAndValidateData($extractedData));
             }
 
-            Log::error('n8n Webhook Failed', ['status' => $response->status(), 'body' => $response->body()]);
-            return response()->json(['message' => 'Failed to process document with AI service.'], 500);
+            Log::error('Gemini API Failed', ['status' => $response->status(), 'body' => $response->body()]);
+            return response()->json(['message' => 'Failed to process document with AI service. API returned: ' . $response->status()], 500);
 
         } catch (\Exception $e) {
-            Log::error('n8n Webhook Exception', ['message' => $e->getMessage()]);
+            Log::error('Gemini API Exception', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to connect to the AI service.'], 500);
         }
     }
@@ -69,7 +119,7 @@ class ChallanExtractionController extends Controller
 
         if ($poNumber) {
             // Try to find the Purchase Order in the database
-            $matchedPo = PurchaseOrder::with(['items', 'supplier'])->where('po_number', $poNumber)->first();
+            $matchedPo = PurchaseOrder::with(['items', 'customer'])->where('po_number', $poNumber)->first();
         }
 
         $enrichedItems = [];
@@ -80,15 +130,67 @@ class ChallanExtractionController extends Controller
             $validationMessage = '';
             
             if ($matchedPo) {
-                // Try to match the item with a PO item (by description or drawing number)
-                $poItem = $matchedPo->items->first(function ($pi) use ($item) {
-                    return stripos($pi->item_description, $item['description']) !== false 
-                        || ($item['drawing_number'] && $pi->drawing_number === $item['drawing_number']);
+                $itemCode = $item['item_code'] ?? $item['drawing_number'] ?? '';
+                
+                // First, find all items that match the item_code
+                $matchedPoItems = $matchedPo->items->filter(function ($pi) use ($itemCode) {
+                    return $itemCode && stripos($pi->item_code, $itemCode) !== false;
                 });
+
+                $poItem = null;
+
+                if ($matchedPoItems->count() > 1) {
+                    // If multiple items have the same item_code, pick the one with the best description match
+                    // Use a combination of similar_text and exact word matching for uniqueness
+                    $bestScore = -1;
+                    $itemDesc = strtolower(trim($item['description'] ?? ''));
+                    
+                    foreach ($matchedPoItems as $pi) {
+                        $piDesc = strtolower(trim($pi->description));
+                        $score = 0;
+                        
+                        similar_text($piDesc, $itemDesc, $baseSim);
+                        $score += $baseSim;
+                        
+                        // Boost score if unique words (like 'final', 'primary', 'grinding') match
+                        $words = array_filter(explode(' ', preg_replace('/[^a-z0-9]/', ' ', $piDesc)));
+                        $matchedWords = 0;
+                        foreach($words as $word) {
+                            if (strlen($word) > 2 && strpos($itemDesc, $word) !== false) {
+                                $matchedWords++;
+                            }
+                        }
+                        
+                        if (count($words) > 0) {
+                            $wordMatchRatio = $matchedWords / count($words);
+                            $score += ($wordMatchRatio * 100); // Massive boost for exact word matches
+                        }
+                        
+                        if ($score > $bestScore) {
+                            $bestScore = $score;
+                            $poItem = $pi;
+                        }
+                    }
+                } elseif ($matchedPoItems->count() === 1) {
+                    $poItem = $matchedPoItems->first();
+                }
+
+                if (!$poItem) {
+                    // Fallback: match by description similarity if item_code is completely missing
+                    $bestScore = 50; // Require at least 50% similarity for a fallback match
+                    foreach ($matchedPo->items as $pi) {
+                        similar_text(strtolower(trim($pi->description)), strtolower(trim($item['description'] ?? '')), $percent);
+                        if ($percent > $bestScore) {
+                            $bestScore = $percent;
+                            $poItem = $pi;
+                        }
+                    }
+                }
 
                 if ($poItem) {
                     // Map to what the frontend expects
                     $item['item_code'] = $poItem->item_code;
+                    $item['po_item_id'] = $poItem->id;
                     $item['quantity_received'] = (float)$item['quantity'];
 
                     // Check quantity
@@ -114,7 +216,7 @@ class ChallanExtractionController extends Controller
         
         if ($matchedPo) {
             $data['purchase_order_id'] = $matchedPo->id;
-            $data['supplier_name'] = $matchedPo->supplier->name ?? ($data['supplier_name'] ?? '');
+            $data['supplier_name'] = $matchedPo->customer->customer_name ?? ($data['supplier_name'] ?? '');
         }
 
         return $data;

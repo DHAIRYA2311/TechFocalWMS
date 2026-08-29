@@ -14,12 +14,13 @@ import {
   Users,
   Sparkles,
 } from "lucide-react";
-import heroImg from "@/assets/hero-workshop.jpg";
-import aboutImg from "@/assets/about-craft.jpg";
-import g1 from "@/assets/gallery-1.jpg";
-import g5 from "@/assets/gallery-5.jpg";
-import g3 from "@/assets/gallery-3.jpg";
-import g7 from "@/assets/gallery-7.jpg";
+import heroImg from "@/assets/workshop/HERO.png";
+import aboutImg from "@/assets/workshop/PHOTO-2025-02-20-14-37-15.jpg";
+import img1 from "@/assets/workshop/PHOTO-2025-02-20-14-37-15.jpg";
+import img2 from "@/assets/workshop/PHOTO-2024-04-26-13-45-14 2.jpg";
+import img3 from "@/assets/workshop/PHOTO-2024-04-26-13-45-14.jpg";
+import img4 from "@/assets/workshop/PHOTO-2024-04-26-13-45-14 3.jpg";
+import img5 from "@/assets/workshop/PHOTO-2024-04-26-13-45-14 4.jpg";
 import { Reveal } from "@/components/site/Reveal";
 import { Counter } from "@/components/site/Counter";
 import { Marquee } from "@/components/site/Marquee";
@@ -109,26 +110,19 @@ function Home() {
               </Reveal>
             </div>
 
-            <Reveal direction="right" delay={0.1} className="lg:col-span-6">
-              <div className="relative">
-                <div className="absolute -inset-4 rounded-[2rem] bg-cream -z-10" />
+            <Reveal direction="right" delay={0.1} className="lg:col-span-6 relative">
+              <div className="relative w-full flex items-center justify-center lg:justify-end">
+                {/* Subtle transparency/fading toward the edges to naturally blend into background */}
+                <div className="absolute inset-y-0 left-0 w-1/3 md:w-1/4 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+                <div className="absolute inset-y-0 right-0 w-8 md:w-16 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
+                <div className="absolute inset-x-0 bottom-0 h-1/6 md:h-1/4 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none" />
+                <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
+                
                 <img
                   src={heroImg}
-                  alt="TechFocal precision engineering workshop"
-                  width={1600}
-                  height={1200}
-                  className="w-full h-[440px] md:h-[560px] object-cover rounded-[1.75rem] shadow-[var(--shadow-lift)]"
+                  alt="TechFocal precision engineering workshop sketch"
+                  className="w-full max-h-[450px] md:max-h-[600px] object-contain object-center lg:object-right opacity-95 mix-blend-multiply dark:mix-blend-screen"
                 />
-                <div className="absolute -bottom-6 -left-6 hidden md:block card-soft p-5 max-w-[220px]">
-                  <div className="text-3xl font-medium tracking-tight">
-                    <Counter to={99} suffix="%" />
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">On-time delivery rate across all orders.</div>
-                </div>
-                <div className="absolute -top-6 -right-6 hidden md:flex card-soft px-4 py-3 items-center gap-2">
-                  <BadgeCheck className="h-4 w-4 text-secondary" />
-                  <span className="text-xs font-medium">ISO-aligned QC process</span>
-                </div>
               </div>
             </Reveal>
           </div>
@@ -325,16 +319,19 @@ function Home() {
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-4 md:grid-rows-2 md:h-[560px]">
             <Reveal direction="scale" className="md:col-span-2 md:row-span-2">
-              <img src={g5} alt="Workshop" loading="lazy" className="w-full h-full min-h-[280px] object-cover rounded-[1.25rem]" />
+              <img src={img1} alt="Workshop overview" loading="lazy" className="w-full h-full min-h-[280px] object-cover rounded-[1.25rem]" />
             </Reveal>
             <Reveal direction="scale" delay={0.05}>
-              <img src={g1} alt="Precision lathe" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem]" />
+              <img src={img2} alt="Workshop detail 1" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem]" />
             </Reveal>
             <Reveal direction="scale" delay={0.1}>
-              <img src={g7} alt="Turning sparks" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem]" />
+              <img src={img3} alt="Workshop detail 2" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem]" />
             </Reveal>
             <Reveal direction="scale" delay={0.15}>
-              <img src={g3} alt="Finished components" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem] md:col-span-2" />
+              <img src={img4} alt="Workshop detail 3" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem]" />
+            </Reveal>
+            <Reveal direction="scale" delay={0.2}>
+              <img src={img5} alt="Workshop detail 4" loading="lazy" className="w-full h-full min-h-[180px] object-cover rounded-[1.25rem]" />
             </Reveal>
           </div>
         </div>

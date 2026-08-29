@@ -1,52 +1,90 @@
 {
-  "name": "Incoming Challan OCR Extractor",
+  "name": "Incoming Challan OCR Extractor (Universal HTTP)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "extract-incoming-challan",
-        "responseMode": "lastNode",
+        "responseMode": "responseNode",
         "options": {}
       },
-      "id": "webhook-node",
+      "id": "webhook",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [ 200, 300 ],
+      "position": [
+        200,
+        300
+      ],
       "webhookId": "extract-incoming-challan"
     },
     {
       "parameters": {
-        "resource": "chat",
-        "operation": "create",
-        "model": "gpt-4o",
-        "messages": {
-          "messageValues": [
+        "jsCode": "for (const item of $input.all()) {\n  const binaryData = await this.helpers.getBinaryDataBuffer(0, 'data');\n  item.json.base64 = binaryData.toString('base64');\n  item.json.mimeType = item.binary.data.mimeType;\n}\nreturn $input.all();"
+      },
+      "id": "code-base64",
+      "name": "Convert Image to Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
             {
-              "content": "You are a highly accurate data extraction assistant. Extract the following information from the provided Incoming Challan (Delivery Challan from a supplier). Return ONLY valid JSON matching this schema:\n{\n  \"challan_number\": \"string or null\",\n  \"challan_date\": \"YYYY-MM-DD or null\",\n  \"purchase_order_number\": \"string or null\",\n  \"supplier_name\": \"string or null\",\n  \"items\": [\n    {\n      \"description\": \"string\",\n      \"quantity\": number,\n      \"drawing_number\": \"string or null\",\n      \"unit\": \"string or null\"\n    }\n  ]\n}\n\nDo not invent data. If a field is not present, return null.",
-              "role": "system"
-            },
-            {
-              "content": "Extract the data from this document.",
-              "role": "user"
+              "name": "key",
+              "value": "YOUR_GOOGLE_GEMINI_API_KEY_HERE"
             }
           ]
         },
-        "vision": true,
-        "imageBinaryPropertyName": "data",
-        "jsonOutput": true
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are a highly accurate data extraction assistant. Extract the information from the provided Incoming Challan. Return ONLY valid JSON matching this schema:\\n{\\n  \\\"challan_number\\\": \\\"string or null\\\",\\n  \\\"challan_date\\\": \\\"YYYY-MM-DD or null\\\",\\n  \\\"purchase_order_number\\\": \\\"string or null\\\",\\n  \\\"supplier_name\\\": \\\"string or null\\\",\\n  \\\"items\\\": [\\n    {\\n      \\\"description\\\": \\\"string\\\",\\n      \\\"quantity\\\": number,\\n      \\\"drawing_number\\\": \\\"string or null\\\",\\n      \\\"unit\\\": \\\"string or null\\\"\\n    }\\n  ]\\n}\\n\\nDo not invent data. If a field is not present, return null.\"\n      }\n    ]\n  },\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Extract the data from this document.\"\n        },\n        {\n          \"inline_data\": {\n            \"mime_type\": \"{{ $json.mimeType }}\",\n            \"data\": \"{{ $json.base64 }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"response_mime_type\": \"application/json\"\n  }\n}",
+        "options": {}
       },
-      "id": "openai-node",
-      "name": "OpenAI",
-      "type": "n8n-nodes-base.openAi",
+      "id": "http-gemini",
+      "name": "Call Gemini API",
+      "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
-      "position": [ 460, 300 ],
-      "credentials": {
-        "openAiApi": {
-          "id": "YOUR_OPENAI_CREDENTIAL_ID",
-          "name": "OpenAI account"
-        }
-      }
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of $input.all()) {\n  try {\n    // Gemini returns the text inside candidates[0].content.parts[0].text\n    const textResponse = item.json.candidates[0].content.parts[0].text;\n    item.json = JSON.parse(textResponse);\n  } catch (e) {\n    item.json = { error: \"Failed to parse response\", details: e.message };\n  }\n}\nreturn $input.all();"
+      },
+      "id": "code-parse",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
     }
   ],
   "connections": {
@@ -54,7 +92,40 @@
       "main": [
         [
           {
-            "node": "OpenAI",
+            "node": "Convert Image to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Image to Base64": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini API": {
+      "main": [
+        [
+          {
+            "node": "Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }

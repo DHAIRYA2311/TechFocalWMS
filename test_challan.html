@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delivery Challan - SANDVIK</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: #f4f4f4;
+        }
+
+        .challan-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 40px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border: 1px solid #ccc;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+
+        .company-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1e3a8a;
+            margin: 0;
+        }
+
+        .document-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-transform: uppercase;
+        }
+
+        .meta-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .info-box {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .info-box p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid #333;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        td {
+            padding: 12px;
+            font-size: 14px;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 50px;
+            padding-top: 20px;
+        }
+
+        .signature-box {
+            text-align: center;
+            width: 200px;
+        }
+
+        .signature-line {
+            border-top: 1px solid #333;
+            margin-top: 50px;
+            padding-top: 5px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="challan-container">
+        <div class="header">
+            <div>
+                <h1 class="company-name">SANDVIK ASIA PVT LTD</h1>
+                <p style="margin: 5px 0 0; font-size: 14px;">Mumbai-Pune Road, Dapodi<br>Pune 411012, Maharashtra, India
+                </p>
+            </div>
+            <div style="text-align: right;">
+                <h2 class="document-title">DELIVERY CHALLAN</h2>
+                <p style="font-weight: bold; font-size: 16px; margin: 5px 0;">Challan No: DC/2026/0899</p>
+                <p style="font-size: 14px; margin: 0;">Date: 22/08/2026</p>
+            </div>
+        </div>
+
+        <div class="meta-info">
+            <div class="info-box">
+                <strong>Billed To / Delivered To:</strong>
+                <p>TechFocal Engineering Solutions</p>
+                <p>MIDC Bhosari, Pune</p>
+            </div>
+            <div class="info-box">
+                <strong>Order Reference:</strong>
+                <p><strong>PO NO:</strong> 2553628</p>
+                <p><strong>PO Date:</strong> 27/11/2025</p>
+                <p><strong>Vehicle No:</strong> MH-12-AB-9988</p>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th width="5%">Sr</th>
+                    <th width="20%">Item Code / Drawing No</th>
+                    <th width="45%">Description & Specification</th>
+                    <th width="15%" style="text-align: center;">Quantity</th>
+                    <th width="15%" style="text-align: center;">UOM</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td><strong>442.8983-05MC</strong></td>
+                    <td>
+                        Final MACHINING<br>
+                        <span style="font-size: 12px; color: #555;">Revision: 07</span><br>
+                        <span style="font-size: 12px; color: #555;">Process: FINAL MACHINING</span>
+                    </td>
+                    <td style="text-align: center; font-weight: bold; font-size: 16px;">1</td>
+                    <td style="text-align: center;">Nos</td>
+                </tr>
+
+            </tbody>
+        </table>
+
+        <p style="font-size: 12px; color: #555; text-align: center;">* This is a computer-generated test document for
+            OCR validation. No signature is required.</p>
+
+        <div class="footer">
+            <div class="signature-box">
+                <div class="signature-line">Receiver's Signature / Stamp</div>
+            </div>
+            <div class="signature-box">
+                <div class="signature-line">Authorized Signatory</div>
+                <p style="margin: 0; font-size: 12px;">For SANDVIK ASIA PVT LTD</p>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

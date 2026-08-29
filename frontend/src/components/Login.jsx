@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Mail, Lock, AlertTriangle, ArrowRight, Eye, EyeOff, Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
 import Logo from './Logo';
+import loginBg from '../assets/LOGIN.png';
 
 export default function Login({ onLoginSuccess }) {
   const navigate = useNavigate();
@@ -19,6 +20,9 @@ export default function Login({ onLoginSuccess }) {
 
   // Flip State
   const [isFlipped, setIsFlipped] = useState(false);
+  
+  // Animation State
+  const [isSuccessZoom, setIsSuccessZoom] = useState(false);
 
   // Forgot Password State
   const [forgotEmail, setForgotEmail] = useState('');
@@ -63,6 +67,7 @@ export default function Login({ onLoginSuccess }) {
         setRequiresMfa(true);
         setIsEmailOtp(false);
         setMfaToken(response.data.mfa_token);
+        setLoading(false);
         return;
       }
 
@@ -71,6 +76,7 @@ export default function Login({ onLoginSuccess }) {
         setIsEmailOtp(true);
         setMfaToken(response.data.mfa_token);
         setError(response.data.message || 'Please check your email for the verification code.');
+        setLoading(false);
         return;
       }
 
@@ -80,8 +86,11 @@ export default function Login({ onLoginSuccess }) {
       localStorage.setItem('auth_token', access_token);
       localStorage.setItem('user_profile', JSON.stringify(user));
 
-      // Trigger app state change
-      onLoginSuccess(user, needs_mfa_setup);
+      // Trigger app state change with smooth transition animation
+      setIsSuccessZoom(true);
+      setTimeout(() => {
+        onLoginSuccess(user, needs_mfa_setup);
+      }, 800);
     } catch (err) {
       console.error(err);
       if (err.response && err.response.data && err.response.data.message) {
@@ -93,7 +102,6 @@ export default function Login({ onLoginSuccess }) {
       } else {
         setError('Connection failed. Please ensure the backend server is running.');
       }
-    } finally {
       setLoading(false);
     }
   };
@@ -118,14 +126,18 @@ export default function Login({ onLoginSuccess }) {
 
       localStorage.setItem('auth_token', access_token);
       localStorage.setItem('user_profile', JSON.stringify(user));
-      onLoginSuccess(user, needs_mfa_setup);
+      
+      // Trigger app state change with smooth transition animation
+      setIsSuccessZoom(true);
+      setTimeout(() => {
+        onLoginSuccess(user, needs_mfa_setup);
+      }, 800);
     } catch (err) {
       if (err.response && err.response.data && err.response.data.message) {
         setError(err.response.data.message);
       } else {
         setError('Invalid authentication code.');
       }
-    } finally {
       setLoading(false);
     }
   };
@@ -147,184 +159,273 @@ export default function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="login-split-layout">
-      {/* Left side: Premium Branding & Imagery */}
-      <div className="login-left">
-        <div className="login-left-overlay"></div>
-        <div className="login-left-content animate-fade-in">
-          <Logo variant="stacked" height={80} textColor="#ffffff" />
-          <div className="login-left-text">
-            <h2>Next-Gen Workshop Management</h2>
-            <p>Streamline your production, empower your workforce, and elevate your manufacturing efficiency to new heights.</p>
-          </div>
-        </div>
+    <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', padding: '1rem', boxSizing: 'border-box', overflow: 'hidden' }}>
+      
+      {/* Dynamic CSS injection for Dark Glass Card text colors without touching index.css */}
+      <style>
+        {`
+          .dark-glass-card .login-header h2,
+          .dark-glass-card .login-header .login-subtitle,
+          .dark-glass-card .form-label,
+          .dark-glass-card .role-helper-text p {
+            color: #f8fafc !important;
+          }
+          .dark-glass-card .form-input {
+            background-color: rgba(15, 23, 42, 0.4) !important;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            color: #ffffff !important;
+          }
+          .dark-glass-card .form-input:focus {
+            border-color: #3b82f6 !important;
+            background-color: rgba(15, 23, 42, 0.6) !important;
+          }
+          .dark-glass-card .form-input::placeholder {
+            color: rgba(255,255,255,0.4) !important;
+          }
+          .dark-glass-card .input-icon, 
+          .dark-glass-card .password-toggle-btn {
+            color: rgba(255,255,255,0.5) !important;
+          }
+          .dark-glass-card .role-helper-badge {
+            background-color: rgba(255,255,255,0.05) !important;
+            border: 1px solid rgba(255,255,255,0.15) !important;
+            color: #e2e8f0 !important;
+            padding: 0.6rem 0.5rem !important;
+            font-size: 0.85rem !important;
+            font-weight: 500 !important;
+            border-radius: 0.5rem !important;
+            transition: all 0.2s ease;
+          }
+          .dark-glass-card .role-helper-badge:hover {
+            background-color: rgba(37, 99, 235, 0.2) !important;
+            border-color: rgba(59, 130, 246, 0.6) !important;
+            color: #ffffff !important;
+          }
+          .dark-glass-card .premium-btn {
+            background-color: #2563eb !important;
+            color: #ffffff !important;
+            border: none !important;
+          }
+          .dark-glass-card .premium-btn:hover {
+            background-color: #1d4ed8 !important;
+          }
+          .dark-glass-card .btn-link {
+            color: #93c5fd !important;
+          }
+          .dark-glass-card .btn-link:hover {
+            color: #60a5fa !important;
+          }
+          
+          /* Mobile padding adjustment */
+          @media (max-width: 640px) {
+            .dark-glass-card {
+              padding: 1.5rem 1.25rem !important;
+            }
+          }
+        `}
+      </style>
+
+      {/* Full-screen Background with smooth zoom animation upon successful login */}
+      <div style={{ 
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0,
+        transform: isSuccessZoom ? 'scale(1.2)' : 'scale(1)',
+        transition: 'transform 0.9s cubic-bezier(0.25, 0.1, 0.25, 1)'
+      }}>
+        <img 
+          src={loginBg} 
+          alt="TechFocal Workshop Background" 
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.15) brightness(0.85)' }}
+        />
+        <div style={{ 
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+          backgroundColor: 'rgba(5, 10, 20, 0.45)', 
+          opacity: isSuccessZoom ? 0.1 : 1,
+          transition: 'opacity 0.8s ease-out'
+        }} />
       </div>
 
-      {/* Right side: Login Form */}
-      <div className="login-right">
-        <div className="login-form-container">
+      <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: '380px', margin: '0 auto' }}>
+        {/* Clean premium login card */}
+        <div className="dark-glass-card" style={{ 
+          borderRadius: '1rem', 
+          border: '1px solid rgba(255, 255, 255, 0.12)', 
+          borderTop: '1px solid rgba(255, 255, 255, 0.25)',
+          backgroundColor: 'rgba(15, 23, 42, 0.55)', 
+          backdropFilter: 'blur(20px)', 
+          WebkitBackdropFilter: 'blur(20px)',
+          padding: '2.25rem 1.75rem', 
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
+          position: 'relative',
+          opacity: isSuccessZoom ? 0 : 1,
+          transform: isSuccessZoom ? 'scale(0.9) translateY(-10px)' : 'scale(1) translateY(0)',
+          transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.75rem' }}>
+            <Logo variant="stacked" height={75} textColor="#ffffff" />
+          </div>
+
           <div className={`login-flipper ${isFlipped ? 'flipped' : ''}`}>
             
-            {/* Front: Login Form */}
+            {/* FRONT SIDE (Login & MFA) */}
             <div className="login-front">
               <div className="login-header">
                 <h2>Welcome Back</h2>
                 <p className="login-subtitle">Sign in to your account to continue</p>
               </div>
 
-          {/* Error Feedback */}
-          {error && (
-            <div className="alert alert-danger" style={{ marginBottom: '24px' }}>
-              <AlertTriangle size={18} className="alert-icon-shrink" style={{ flexShrink: 0 }} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {requiresMfa ? (
-            <form onSubmit={handleMfaSubmit} className="premium-form">
-              <div className="form-group" style={{ marginBottom: '24px' }}>
-                <label className="form-label" htmlFor="mfa-input">
-                  {isEmailOtp ? '6-Digit Email Verification Code' : 'Authenticator or Recovery Code'}
-                </label>
-                <div className="input-wrapper">
-                  <span className="input-icon">
-                    <Lock size={18} />
-                  </span>
-                  <input
-                    id="mfa-input"
-                    type="text"
-                    className="form-input"
-                    placeholder={isEmailOtp ? "123456" : "000000 or Recovery Code"}
-                    maxLength={16}
-                    value={mfaCode}
-                    onChange={(e) => setMfaCode(e.target.value)}
-                    disabled={loading}
-                    autoComplete="off"
-                  />
+              {error && (
+                <div className="alert alert-danger" style={{ marginBottom: '24px' }}>
+                  <AlertTriangle size={18} className="alert-icon-shrink" style={{ flexShrink: 0 }} />
+                  <span>{error}</span>
                 </div>
-              </div>
-              <button type="submit" className="form-button premium-btn" disabled={loading}>
-                {loading ? (
-                  <><Loader2 size={18} className="animate-spin" /> Verifying...</>
-                ) : (
-                  <><Lock size={18} /> Verify Code</>
-                )}
-              </button>
-              <div style={{ textAlign: 'center', marginTop: '20px' }}>
-                <button
-                  type="button"
-                  onClick={() => { setRequiresMfa(false); setMfaCode(''); }}
-                  className="btn-link"
-                >
-                  Back to Login
-                </button>
-              </div>
-            </form>
-          ) : (
-            <>
-              <form onSubmit={handleSubmit} className="premium-form">
-                {/* Email field */}
-                <div className="form-group">
-                  <label className="form-label" htmlFor="email-input">
-                    Email Address
-                  </label>
-                  <div className="input-wrapper">
-                    <span className="input-icon">
-                      <Mail size={18} />
-                    </span>
-                    <input
-                      id="email-input"
-                      type="email"
-                      className="form-input"
-                      placeholder="name@techfocal.in"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      disabled={loading}
-                      autoComplete="email"
-                    />
+              )}
+
+              {requiresMfa ? (
+                <form onSubmit={handleMfaSubmit} className="premium-form">
+                  <div className="form-group" style={{ marginBottom: '24px' }}>
+                    <label className="form-label" htmlFor="mfa-input">
+                      {isEmailOtp ? '6-Digit Email Verification Code' : 'Authenticator or Recovery Code'}
+                    </label>
+                    <div className="input-wrapper">
+                      <span className="input-icon">
+                        <Lock size={18} />
+                      </span>
+                      <input
+                        id="mfa-input"
+                        type="text"
+                        className="form-input"
+                        placeholder={isEmailOtp ? "123456" : "000000 or Recovery Code"}
+                        maxLength={16}
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value)}
+                        disabled={loading}
+                        autoComplete="off"
+                      />
+                    </div>
                   </div>
-                </div>
-
-                {/* Password field */}
-                <div className="form-group" style={{ marginBottom: '24px' }}>
-                  <label className="form-label" htmlFor="password-input">
-                    Password
-                  </label>
-                  <div className="input-wrapper">
-                    <span className="input-icon">
-                      <Lock size={18} />
-                    </span>
-                    <input
-                      id="password-input"
-                      type={showPassword ? 'text' : 'password'}
-                      className="form-input"
-                      placeholder="Enter password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={loading}
-                      style={{ paddingRight: '40px' }}
-                      autoComplete="current-password"
-                    />
+                  <button type="submit" className="form-button premium-btn" disabled={loading}>
+                    {loading ? (
+                      <><Loader2 size={18} className="animate-spin" /> Verifying...</>
+                    ) : (
+                      <><Lock size={18} /> Verify Code</>
+                    )}
+                  </button>
+                  <div style={{ textAlign: 'center', marginTop: '20px' }}>
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="password-toggle-btn"
-                      disabled={loading}
-                      aria-label="Toggle password visibility"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                    <button
-                      type="button"
+                      onClick={() => { setRequiresMfa(false); setMfaCode(''); }}
                       className="btn-link"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setIsFlipped(true);
-                      }}
                     >
-                      Forgot Password?
+                      Back to Login
                     </button>
                   </div>
-                </div>
+                </form>
+              ) : (
+                <>
+                  <form onSubmit={handleSubmit} className="premium-form">
+                    {/* Email field */}
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="email-input">
+                        Email Address
+                      </label>
+                      <div className="input-wrapper">
+                        <span className="input-icon">
+                          <Mail size={18} />
+                        </span>
+                        <input
+                          id="email-input"
+                          type="email"
+                          className="form-input"
+                          placeholder="name@techfocal.in"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          disabled={loading}
+                          autoComplete="email"
+                        />
+                      </div>
+                    </div>
 
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  className="form-button premium-btn"
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      Signing in...
-                    </>
-                  ) : (
-                    <>
-                      Sign In
-                      <ArrowRight size={18} />
-                    </>
-                  )}
-                </button>
-              </form>
+                    {/* Password field */}
+                    <div className="form-group" style={{ marginBottom: '24px' }}>
+                      <label className="form-label" htmlFor="password-input">
+                        Password
+                      </label>
+                      <div className="input-wrapper">
+                        <span className="input-icon">
+                          <Lock size={18} />
+                        </span>
+                        <input
+                          id="password-input"
+                          type={showPassword ? 'text' : 'password'}
+                          className="form-input"
+                          placeholder="Enter password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          disabled={loading}
+                          style={{ paddingRight: '40px' }}
+                          autoComplete="current-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="password-toggle-btn"
+                          disabled={loading}
+                          aria-label="Toggle password visibility"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setIsFlipped(true);
+                          }}
+                        >
+                          Forgot Password?
+                        </button>
+                      </div>
+                    </div>
 
-              {/* Demo helpers */}
-              <div className="role-helper-text premium-helpers">
-                <p>Quick Demo Sign-ins</p>
-                <div className="role-badge-list">
-                  <button onClick={() => handleQuickLogin('partner')} className="role-helper-badge" type="button">Partner</button>
-                  <button onClick={() => handleQuickLogin('admin')} className="role-helper-badge" type="button">Admin</button>
-                  <button onClick={() => handleQuickLogin('manager')} className="role-helper-badge" type="button">Manager</button>
-                  <button onClick={() => handleQuickLogin('worker')} className="role-helper-badge" type="button">Worker</button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      className="form-button premium-btn"
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" />
+                          Signing in...
+                        </>
+                      ) : (
+                        <>
+                          Sign In
+                          <ArrowRight size={18} />
+                        </>
+                      )}
+                    </button>
+                  </form>
 
-        {/* Back: Forgot Password Form */}
-        <div className="login-back">
+                  {/* Demo helpers */}
+                  <div className="role-helper-text premium-helpers">
+                    <p>Quick Demo Sign-ins</p>
+                    <div className="role-badge-list">
+                      <button onClick={() => handleQuickLogin('partner')} className="role-helper-badge" type="button">Partner</button>
+                      <button onClick={() => handleQuickLogin('admin')} className="role-helper-badge" type="button">Admin</button>
+                      <button onClick={() => handleQuickLogin('manager')} className="role-helper-badge" type="button">Manager</button>
+                      <button onClick={() => handleQuickLogin('worker')} className="role-helper-badge" type="button">Worker</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* BACK SIDE (Forgot Password) */}
+            <div className="login-back">
               <div className="login-header">
                 <h2>Reset Password</h2>
                 <p className="login-subtitle">Enter your email and we'll send a reset link.</p>

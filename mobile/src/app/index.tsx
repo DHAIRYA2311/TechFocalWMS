@@ -355,6 +355,16 @@ export default function HomeScreen() {
                 <Text style={styles.moduleDesc}>Manage Stock</Text>
               </View>
             </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moduleCard} onPress={() => router.push('/challans')}>
+              <View style={[styles.iconContainer, { backgroundColor: '#fef3c7' }]}>
+                <ClipboardList size={24} color="#d97706" />
+              </View>
+              <View style={styles.moduleMeta}>
+                <Text style={styles.moduleTitle}>Challans</Text>
+                <Text style={styles.moduleDesc}>Inward & Outward</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
 
