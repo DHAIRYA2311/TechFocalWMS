@@ -26,6 +26,25 @@ use App\Http\Controllers\Api\MaintenanceController;
 use App\Http\Middleware\UpdateDeviceActivity;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Artisan;
+
+// Temporary route to run migrations on free hosting tiers
+Route::get('/run-migrations', function () {
+    try {
+        Artisan::call('migrate', ['--force' => true]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Migrations executed successfully.',
+            'output' => Artisan::output()
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Migration failed.',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
 
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
