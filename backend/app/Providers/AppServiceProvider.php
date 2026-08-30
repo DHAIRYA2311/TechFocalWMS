@@ -20,9 +20,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         \Illuminate\Support\Facades\Gate::define('viewPulse', function ($user = null) {
-            // Since this WMS uses Sanctum token auth for APIs, traditional web routes might not have the user.
-            // For now, allow viewing the dashboard in local/development environments.
-            return app()->environment('local') || ($user && $user->role === 'admin');
+            // Since this WMS uses Sanctum token auth for APIs, traditional web routes (like Pulse) 
+            // inside an iframe won't receive the Bearer token.
+            // We allow access if it's local OR if the request originates from the TechFocal frontend.
+            $referer = request()->headers->get('referer') ?? request()->headers->get('origin') ?? '';
+            $isFromValidOrigin = str_contains($referer, 'techfocal') || str_contains($referer, 'localhost') || str_contains($referer, '127.0.0.1');
+            
+            return app()->environment('local') || ($user && $user->role === 'admin') || $isFromValidOrigin;
         });
 
         try {
