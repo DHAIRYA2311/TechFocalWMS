@@ -8,7 +8,6 @@ export default function DocumentSettings() {
   const [formData, setFormData] = useState({
     prefix_po: 'PO-',
     prefix_challan: 'DC-',
-    prefix_invoice: 'INV-',
     prefix_job: 'JOB-',
     auto_numbering: '1',
     enable_watermark: '1',
@@ -24,7 +23,6 @@ export default function DocumentSettings() {
       setFormData({
         prefix_po: settings.prefix_po || 'PO-',
         prefix_challan: settings.prefix_challan || 'DC-',
-        prefix_invoice: settings.prefix_invoice || 'INV-',
         prefix_job: settings.prefix_job || 'JOB-',
         auto_numbering: settings.auto_numbering !== undefined ? settings.auto_numbering : '1',
         enable_watermark: settings.enable_watermark !== undefined ? settings.enable_watermark : '1',
@@ -65,7 +63,7 @@ export default function DocumentSettings() {
           Document Serialization
         </h2>
         <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '24px' }}>
-          Define prefixes and numbering sequences for jobs, purchase orders, outgoing challans, and commercial invoice ledgers.
+          Define prefixes and numbering sequences for jobs, purchase orders, and outgoing challans.
         </p>
 
         {feedback && (
@@ -117,20 +115,6 @@ export default function DocumentSettings() {
                 required
               />
               <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Example: {formData.prefix_challan}0001</span>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Commercial Invoice Prefix</label>
-              <input 
-                type="text"
-                className="form-input"
-                value={formData.prefix_invoice}
-                onChange={e => setFormData({ ...formData, prefix_invoice: e.target.value })}
-                style={{ paddingLeft: '12px' }}
-                placeholder="INV-"
-                required
-              />
-              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Example: {formData.prefix_invoice}0001</span>
             </div>
           </div>
 

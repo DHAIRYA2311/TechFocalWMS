@@ -234,8 +234,9 @@
                                 @endif
                             @endif
                             <p style="color: #475569; margin: 0; line-height: 1.4;">
-                                Plot 12, Industrial Area Phase-1, GIDC,<br>
-                                Ahmedabad, Gujarat, India - 380001<br>
+                                Plot No 1 Survey No. 97/1, Canal Road,<br>
+                                Village : Lamdapura ,Ta : Savali<br>
+                                Dist: Vadodara - 391775<br>
                                 <strong>GSTIN: 24AAHFT8902M1Z8</strong>
                             </p>
                         </div>

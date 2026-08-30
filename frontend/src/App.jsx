@@ -13,6 +13,7 @@ const DashboardPlaceholder = lazy(() => import('./components/DashboardPlaceholde
 const Login = lazy(() => import('./components/Login'));
 const ForgotPassword = lazy(() => import('./components/ForgotPassword'));
 const ResetPassword = lazy(() => import('./components/ResetPassword'));
+const SystemMonitoring = lazy(() => import('./components/SystemMonitoring'));
 
 // Lazy load view components
 const DashboardHome = lazy(() => import('./components/DashboardHome'));
@@ -42,6 +43,7 @@ import CompanySettings from './components/settings/CompanySettings';
 import BrandingSettings from './components/settings/BrandingSettings';
 import DomainSettings from './components/settings/DomainSettings';
 import DocumentSettings from './components/settings/DocumentSettings';
+import InvoiceSettings from './components/settings/InvoiceSettings';
 import AttendanceSettings from './components/settings/AttendanceSettings';
 import NotificationSettings from './components/settings/NotificationSettings';
 import EmailSettings from './components/settings/EmailSettings';
@@ -296,6 +298,8 @@ export default function App() {
             </AdminPartnerRoute>
           } />
 
+          <Route path="system-monitoring" element={<ErrorBoundary><SystemMonitoring /></ErrorBoundary>} />
+
           {/* Security Center Routes */}
           <Route path="security" element={
             user?.role === 'admin' ? (
@@ -317,6 +321,7 @@ export default function App() {
             <Route path="branding" element={<BrandingSettings />} />
             <Route path="domains" element={<DomainSettings />} />
             <Route path="documents" element={<DocumentSettings />} />
+            <Route path="invoice" element={<InvoiceSettings />} />
             <Route path="attendance" element={<AttendanceSettings />} />
             <Route path="notifications" element={<NotificationSettings />} />
             <Route path="email" element={<EmailSettings />} />

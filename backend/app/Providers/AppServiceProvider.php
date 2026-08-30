@@ -19,6 +19,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \Illuminate\Support\Facades\Gate::define('viewPulse', function ($user = null) {
+            // Since this WMS uses Sanctum token auth for APIs, traditional web routes might not have the user.
+            // For now, allow viewing the dashboard in local/development environments.
+            return app()->environment('local') || ($user && $user->role === 'admin');
+        });
+
         try {
             if (class_exists(\App\Models\Setting::class) && \Illuminate\Support\Facades\Schema::hasTable('settings')) {
                 $tz = \App\Models\Setting::getVal('system_timezone');

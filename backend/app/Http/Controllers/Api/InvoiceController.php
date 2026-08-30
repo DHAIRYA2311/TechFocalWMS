@@ -9,6 +9,7 @@ use App\Models\DeliveryChallan;
 use App\Models\DeliveryChallanItem;
 use App\Models\JobCard;
 use App\Models\PoItem;
+use App\Models\PurchaseOrder;
 use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -88,23 +89,9 @@ class InvoiceController extends Controller
             }
 
             return DB::transaction(function () use ($validated, $poIds) {
-                // 1. Generate sequential invoice number (INV-YYYY-XXXX)
-                $year = date('Y', strtotime($validated['invoice_date']));
-                $settingPrefix = \App\Models\Setting::getVal('prefix_invoice', 'INV-');
-                $prefix = "{$settingPrefix}{$year}-";
-
-                $latest = Invoice::where('invoice_number', 'LIKE', "{$prefix}%")
-                    ->orderBy('invoice_number', 'desc')
-                    ->first();
-
-                $nextSequence = 1;
-                if ($latest) {
-                    $parts = explode('-', $latest->invoice_number);
-                    $lastSeq = (int) end($parts);
-                    $nextSequence = $lastSeq + 1;
-                }
-
-                $invoiceNumber = $prefix . str_pad($nextSequence, 4, '0', STR_PAD_LEFT);
+                // 1. Generate sequential invoice number atomically
+                $invoiceDate = \Carbon\Carbon::parse($validated['invoice_date']);
+                $invoiceNumber = \App\Services\InvoiceNumberingService::generateNextInvoiceNumber($invoiceDate);
 
                 // 2. Identify items to bill
                 $itemsToBill = [];
@@ -610,13 +597,16 @@ class InvoiceController extends Controller
         // DomPDF configuration for A4 portrait
         $pdf->setPaper('a4', 'portrait');
 
-        if ($request->query('save') === 'true') {
-            $fileName = 'invoices/' . $invoice->invoice_number . '_' . time() . '.pdf';
+        $shouldSave = $request->query('save') === 'true';
+        $safeInvoiceNumber = str_replace(['/', '\\'], '-', $invoice->invoice_number);
+
+        if ($shouldSave) {
+            $fileName = 'invoices/' . $safeInvoiceNumber . '_' . time() . '.pdf';
             \Illuminate\Support\Facades\Storage::disk('public')->put($fileName, $pdf->output());
             return response()->json(['url' => asset('storage/' . $fileName)]);
         }
 
-        return $pdf->download($invoice->invoice_number . '.pdf');
+        return $pdf->download($safeInvoiceNumber . '.pdf');
     }
 
     private function numberToWords($num)

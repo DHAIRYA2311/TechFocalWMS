@@ -73,6 +73,7 @@ export default function SettingsCenter() {
     { path: '/settings/notifications', label: 'Notifications', icon: <Bell size={16} /> },
     { path: '/settings/attendance', label: 'Attendance Settings', icon: <Clock size={16} /> },
     { path: '/settings/documents', label: 'Document Settings', icon: <FileText size={16} /> },
+    { path: '/settings/invoice', label: 'Invoice Numbering', icon: <FileText size={16} /> },
     { path: '/settings/system', label: 'System Settings', icon: <Cpu size={16} /> },
     { path: '/settings/maintenance', label: 'Maintenance Mode', icon: <Wrench size={16} /> },
     { path: '/settings/schedulers', label: 'Schedulers (Cron Jobs)', icon: <Clock size={16} /> },

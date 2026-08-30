@@ -28,7 +28,8 @@ import {
   Banknote,
   Link,
   ChevronDown,
-  Settings
+  Settings,
+  Search
 } from 'lucide-react';
 import { useRealTime } from '../hooks/useRealTime';
 
@@ -62,6 +63,7 @@ export default function InvoicesBilling() {
     fetchInvoices();
   });
   const [invoices, setInvoices] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [poList, setPoList] = useState([]);
   const [dcList, setDcList] = useState([]);
   const [uninvoicedJobs, setUninvoicedJobs] = useState([]);
@@ -2394,23 +2396,65 @@ export default function InvoicesBilling() {
 
 {/* Invoices Table */}
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-        {invoices.length === 0 && !loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', padding: '60px 20px', gap: '12px' }}>
-            <Receipt size={40} style={{ color: 'var(--color-text-light)' }} />
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>No Commercial Invoices logged yet.</p>
+        
+        {/* Search Bar */}
+        <div style={{ padding: '16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ position: 'relative', width: '300px' }}>
+            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-light)' }} />
+            <input 
+              type="text" 
+              placeholder="Search by Invoice No, Client, or PO..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '6px', border: '1px solid var(--color-border)', fontSize: '13px', outline: 'none' }}
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-light)', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Clear Search"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
-        ) : (
+        </div>
+
+        {(() => {
+          const filteredInvoices = invoices.filter(inv => {
+            if (!searchQuery) return true;
+            const query = searchQuery.toLowerCase();
+            const invNo = (inv.invoice_number || '').toLowerCase();
+            const clientName = (inv.purchase_order?.customer_name || '').toLowerCase();
+            
+            // Check PO numbers
+            const poOrders = inv.purchase_orders && inv.purchase_orders.length > 0 
+                ? inv.purchase_orders 
+                : (inv.purchase_order ? [inv.purchase_order] : []);
+            const poNumbers = poOrders.map(po => po.po_number || '').join(' ').toLowerCase();
+            
+            return invNo.includes(query) || clientName.includes(query) || poNumbers.includes(query);
+          });
+
+          return filteredInvoices.length === 0 && !loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', padding: '60px 20px', gap: '12px' }}>
+              <Receipt size={40} style={{ color: 'var(--color-text-light)' }} />
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '14px' }}>
+                {searchQuery ? 'No invoices found matching your search.' : 'No Commercial Invoices logged yet.'}
+              </p>
+            </div>
+          ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', textAlign: 'left' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--color-bg-base)', borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>Invoice Number</th>
-                <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>Date</th>
-                <th style={{ padding: '12px' }}>Purchase Order</th>
-                <th style={{ padding: '12px' }}>Client</th>
-                <th style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>Total Amount</th>
-                <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>Status</th>
-                <th style={{ padding: '12px' }}>Linked DC</th>
-                <th style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
+                <th style={{ padding: '16px' }}>Invoice Number</th>
+                <th style={{ padding: '16px' }}>Date</th>
+                <th style={{ padding: '16px' }}>Purchase Order</th>
+                <th style={{ padding: '16px' }}>Client</th>
+                <th style={{ padding: '16px', textAlign: 'right' }}>Total Amount</th>
+                <th style={{ padding: '16px' }}>Status</th>
+                <th style={{ padding: '16px' }}>Linked DC</th>
+                <th style={{ padding: '16px', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2428,9 +2472,9 @@ export default function InvoicesBilling() {
                   </tr>
                 ))
               ) :
-                invoices.map(inv => (
+                filteredInvoices.map(inv => (
                 <tr key={inv.id} style={{ borderBottom: '1px solid var(--color-border)', transition: 'background-color 0.15s ease' }} className="table-row-hover">
-                  <td style={{ padding: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '16px', fontWeight: '600' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>{inv.invoice_number}</span>
                       {inv.cancelled_at && (
@@ -2440,19 +2484,21 @@ export default function InvoicesBilling() {
                       )}
                     </div>
                   </td>
-                  <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>{new Date(inv.invoice_date).toLocaleDateString()}</td>
-                  <td style={{ padding: '12px', fontWeight: '500' }}>
+                  <td style={{ padding: '16px' }}>{new Date(inv.invoice_date).toLocaleDateString()}</td>
+                  <td style={{ padding: '16px', fontWeight: '500' }}>
                     PO #{formatPoNumbers(
                       inv.purchase_orders && inv.purchase_orders.length > 0 
                         ? inv.purchase_orders 
                         : (inv.purchase_order ? [inv.purchase_order] : [])
                     )}
                   </td>
-                  <td style={{ padding: '12px' }}>{inv.purchase_order?.customer_name}</td>
-                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '16px' }}>
+                    {inv.purchase_order?.customer_name}
+                  </td>
+                  <td style={{ padding: '16px', textAlign: 'right', fontWeight: '700', color: 'var(--color-primary)' }}>
                     ₹{parseFloat(inv.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
-                  <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '16px' }}>
                     {inv.cancelled_at ? (
                       <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#fee2e2', color: '#ef4444', borderRadius: '12px', fontWeight: '600' }}>Cancelled</span>
                     ) : inv.status === 'draft' ? (
@@ -2463,7 +2509,7 @@ export default function InvoicesBilling() {
                       <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#ffedd5', color: '#ea580c', borderRadius: '12px', fontWeight: '600' }}>Unpaid</span>
                     )}
                   </td>
-                  <td style={{ padding: '12px' }}>
+                  <td style={{ padding: '16px' }}>
                     {inv.delivery_challan ? (
                       <button
                         onClick={(e) => {
@@ -2478,22 +2524,24 @@ export default function InvoicesBilling() {
                       <span style={{ color: 'var(--color-text-light)', fontStyle: 'italic', fontSize: '12px' }}>No DC Linked</span>
                     )}
                   </td>
-                  <td style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '16px', textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '8px' }}>
                       <button 
                         onClick={() => handleViewDetails(inv.id)}
-                        className="logout-btn"
-                        style={{ padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+                        style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', color: '#475569', borderStyle: 'solid', borderWidth: '1px', borderRadius: '6px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                        onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
                       >
                         <Eye size={12} />
-                        View & Print
+                        View
                       </button>
 
                       {inv.status === 'draft' && !inv.cancelled_at && (
                         <button 
                           onClick={() => handleStartEdit(inv)}
-                          className="logout-btn"
-                          style={{ padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+                          style={{ backgroundColor: '#eff6ff', borderColor: '#bfdbfe', color: '#2563eb', borderStyle: 'solid', borderWidth: '1px', borderRadius: '6px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                          onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#dbeafe'; }}
+                          onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#eff6ff'; }}
                         >
                           <Pencil size={12} />
                           Edit
@@ -2511,11 +2559,12 @@ export default function InvoicesBilling() {
                             setPaymentRemarks('');
                             setShowPaymentModal(true);
                           }}
-                          className="logout-btn"
-                          style={{ padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-primary)', borderColor: 'var(--color-primary)' }}
+                          style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', color: '#16a34a', borderStyle: 'solid', borderWidth: '1px', borderRadius: '6px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                          onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#dcfce7'; }}
+                          onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#f0fdf4'; }}
                         >
                           <CreditCard size={12} />
-                          Record Payment
+                          Payment
                         </button>
                       )}
                     </div>
@@ -2524,7 +2573,8 @@ export default function InvoicesBilling() {
               ))}
             </tbody>
           </table>
-        )}
+          );
+        })()}
       </div>
 
       {/* ── Record Payment Modal ── */}

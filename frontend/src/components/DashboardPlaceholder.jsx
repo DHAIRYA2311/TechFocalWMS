@@ -23,6 +23,7 @@ import {
   BarChart3,
   Loader2,
   Shield,
+  Activity,
 } from 'lucide-react';
 import HeaderProfileDropdown from './HeaderProfileDropdown';
 
@@ -139,6 +140,7 @@ export default function DashboardPlaceholder({ user, onLogout, onUserUpdated }) 
         case 'payroll': breadcrumbs.push('Payroll'); break;
         case 'expenses': breadcrumbs.push('Expenses'); break;
         case 'inventory': breadcrumbs.push('Inventory'); break;
+        case 'system-monitoring': breadcrumbs.push('System Monitoring'); break;
         case 'reports': breadcrumbs.push('Reports & Analytics'); break;
         case 'staffs': breadcrumbs.push('Staff Profiles'); break;
         case 'users': breadcrumbs.push('User Accounts'); break;
@@ -374,6 +376,17 @@ export default function DashboardPlaceholder({ user, onLogout, onUserUpdated }) 
             >
               <Shield size={18} />
               <span>Security Center</span>
+            </NavLink>
+          )}
+
+          {user?.role === 'admin' && (
+            <NavLink 
+              to="/system-monitoring" 
+              className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}
+              style={{ textDecoration: 'none' }}
+            >
+              <Activity size={18} />
+              <span>System Monitoring</span>
             </NavLink>
           )}
           

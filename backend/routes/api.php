@@ -150,6 +150,9 @@ Route::middleware(['auth:sanctum', 'throttle:api', UpdateDeviceActivity::class])
     Route::get('/settings/maintenance', [MaintenanceController::class, 'getAdminSettings']);
     Route::post('/settings/maintenance', [MaintenanceController::class, 'saveAdminSettings']);
 
+    Route::get('/settings/invoice-numbering', [\App\Http\Controllers\Api\Settings\InvoiceSettingsController::class, 'index']);
+    Route::post('/settings/invoice-numbering', [\App\Http\Controllers\Api\Settings\InvoiceSettingsController::class, 'update']);
+
     // Archive Manager Routes
     Route::get('/archive', [\App\Http\Controllers\Api\ArchiveController::class, 'index']);
     Route::post('/archive/restore', [\App\Http\Controllers\Api\ArchiveController::class, 'restore']);
