@@ -41,8 +41,9 @@ function Quote() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const parsed = schema.safeParse({
@@ -61,7 +62,19 @@ function Quote() {
       return;
     }
     setErrors({});
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      await fetch("https://n8n-latest-zn9n.onrender.com/webhook-test/quote", {
+        method: "POST",
+        body: fd,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      console.error("Failed to submit quote request:", err);
+      alert("Failed to submit request. Please check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -145,6 +158,7 @@ function Quote() {
                     </div>
                     <input
                       type="file"
+                      name="drawing"
                       accept=".pdf,.dwg,.dxf,.step,.stp,image/*"
                       onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                       className="hidden"
@@ -155,9 +169,14 @@ function Quote() {
                 <div className="sm:col-span-2 mt-2">
                   <button
                     type="submit"
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-foreground text-background px-6 py-4 text-sm font-medium hover:bg-primary transition-colors"
+                    disabled={submitting}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-foreground text-background px-6 py-4 text-sm font-medium hover:bg-primary transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    Submit Request <ArrowUpRight className="h-4 w-4" />
+                    {submitting ? "Submitting..." : (
+                      <>
+                        Submit Request <ArrowUpRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
