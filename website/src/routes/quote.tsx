@@ -64,14 +64,19 @@ function Quote() {
     setErrors({});
     setSubmitting(true);
     try {
-      await fetch("https://n8n-latest-zn9n.onrender.com/webhook-test/quote", {
+      const res = await fetch("https://n8n-latest-zn9n.onrender.com/webhook-test/quote", {
         method: "POST",
         body: fd,
       });
+      
+      if (!res.ok) {
+        throw new Error(`Webhook responded with status: ${res.status}. If using webhook-test, ensure n8n is actively listening for the test event.`);
+      }
+      
       setSubmitted(true);
     } catch (err) {
       console.error("Failed to submit quote request:", err);
-      alert("Failed to submit request. Please check your connection and try again.");
+      alert("Failed to submit request to the n8n webhook. Please check the console for details.");
     } finally {
       setSubmitting(false);
     }
