@@ -711,7 +711,7 @@ export default function PurchaseOrders() {
         { 
           item_code: '', 
           description: '', 
-          delivery_date: prev.po_date || new Date().toISOString().split('T')[0], 
+          delivery_date: '', 
           hsn_sac: '', 
           uqc: 'PC', 
           quantity: 1, 
@@ -824,7 +824,7 @@ export default function PurchaseOrders() {
         {
           item_code: '',
           description: '',
-          delivery_date: new Date().toISOString().split('T')[0],
+          delivery_date: '',
           hsn_sac: '',
           uqc: 'PC',
           quantity: 1,
