@@ -21,7 +21,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 
 // Set the base URL dynamically for all requests
-axios.defaults.baseURL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+axios.defaults.baseURL = import.meta.env.VITE_API_URL;
 
 // Global interceptor to sanitize 500-level errors
 axios.interceptors.response.use(

@@ -22,12 +22,12 @@ export const initEcho = () => {
   echoInstance = new Echo({
     broadcaster: 'reverb',
     key: key,
-    wsHost: host || '127.0.0.1',
+    wsHost: host,
     wsPort: parseInt(port),
     wssPort: parseInt(port),
     forceTLS: scheme === 'https',
     enabledTransports: ['ws', 'wss'],
-    authEndpoint: `${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/broadcasting/auth`,
+    authEndpoint: import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api/broadcasting/auth` : undefined,
     auth: {
       headers: {
         Authorization: `Bearer ${token}`,

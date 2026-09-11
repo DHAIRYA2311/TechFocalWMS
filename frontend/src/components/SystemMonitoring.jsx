@@ -3,17 +3,24 @@ import { RefreshCw, ExternalLink } from 'lucide-react';
 
 export default function SystemMonitoring() {
   const [iframeKey, setIframeKey] = useState(0);
-  const backendBaseUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+  const backendBaseUrl = import.meta.env.VITE_API_URL;
+  let pulseUrl = "";
   
-  // Align hostname to prevent SameSite=Lax cookie issues in iframe
-  const parsedUrl = new URL(backendBaseUrl);
-  if (parsedUrl.hostname === '127.0.0.1' && window.location.hostname === 'localhost') {
-    parsedUrl.hostname = 'localhost';
-  } else if (parsedUrl.hostname === 'localhost' && window.location.hostname === '127.0.0.1') {
-    parsedUrl.hostname = '127.0.0.1';
+  if (backendBaseUrl) {
+    try {
+      const parsedUrl = new URL(backendBaseUrl);
+      
+      // Align hostname to prevent SameSite=Lax cookie issues in iframe for local dev
+      if (parsedUrl.hostname === '127.0.0.1' && window.location.hostname === 'localhost') {
+        parsedUrl.hostname = 'localhost';
+      } else if (parsedUrl.hostname === 'localhost' && window.location.hostname === '127.0.0.1') {
+        parsedUrl.hostname = '127.0.0.1';
+      }
+      pulseUrl = `${parsedUrl.origin}/pulse`;
+    } catch (e) {
+      console.error("Invalid API URL configuration");
+    }
   }
-  
-  const pulseUrl = `${parsedUrl.origin}/pulse`;
 
   const handleRefresh = () => {
     setIframeKey(prev => prev + 1);

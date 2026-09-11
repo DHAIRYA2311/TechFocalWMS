@@ -45,7 +45,8 @@ export function MaintenancePage({ data, onVerified }: MaintenancePageProps) {
     setError(null);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) throw new Error("API URL is not configured");
       const response = await fetch(`${apiUrl}/api/maintenance/verify`, {
         method: "POST",
         headers: {

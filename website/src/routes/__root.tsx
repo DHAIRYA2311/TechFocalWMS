@@ -145,7 +145,12 @@ function RootComponent() {
     }
 
     // Fetch maintenance status
-    const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (!apiUrl) {
+      console.error("API URL is not configured");
+      setIsInitializing(false);
+      return;
+    }
     fetch(`${apiUrl}/api/maintenance/status`)
       .then((res) => res.json())
       .then((data) => {

@@ -129,12 +129,7 @@ export default function DevicePairingSettings() {
     }
     
     // Fallback for local development
-    const hostname = window.location.hostname;
-    const protocol = window.location.protocol;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return `${protocol}//192.168.29.127:8000`; // Prefill with the user's active local IP
-    }
-    return `${protocol}//${hostname}:8000`;
+    return import.meta.env.VITE_API_URL || "";
   });
 
   // Compile QR Data
@@ -236,10 +231,10 @@ export default function DevicePairingSettings() {
                   paddingLeft: '12px',
                   width: '100%'
                 }}
-                placeholder="http://192.168.29.127:8000"
+                placeholder="http://<YOUR_LOCAL_IP>:8000"
               />
               <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', lineHeight: '1.4' }}>
-                ⚠️ <strong>Important:</strong> Enter your PC's local network IP address (e.g. <code>http://192.168.29.127:8000</code>). Do not use <code>localhost</code> or <code>127.0.0.1</code> because the tablet cannot reach your PC using those loopback addresses.
+                ⚠️ <strong>Important:</strong> Enter your PC's local network IP address (e.g. <code>http://192.168.x.x:8000</code>). Do not use <code>localhost</code> or <code>127.0.0.1</code> because the tablet cannot reach your PC using those loopback addresses.
               </span>
             </div>
 
