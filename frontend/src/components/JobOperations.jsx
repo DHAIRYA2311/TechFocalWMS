@@ -1253,7 +1253,7 @@ export default function JobOperations({ user }) {
   // DEFAULT DASHBOARD VIEW
   // ==========================================
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '80vh' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: '80vh', width: '100%', minWidth: 0 }}>
 
       {/* Header bar with toggle */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
@@ -1507,7 +1507,9 @@ export default function JobOperations({ user }) {
           paddingBottom: '10px',
           alignItems: 'stretch',
           height: 'calc(100vh - 240px)',
-          minHeight: '500px'
+          minHeight: '500px',
+          width: '100%',
+          minWidth: 0
         }}>
           {Object.keys(columns).map(colKey => {
             const columnJobs = columns[colKey];
