@@ -17,6 +17,11 @@ export default function SystemMonitoring() {
         parsedUrl.hostname = '127.0.0.1';
       }
       pulseUrl = `${parsedUrl.origin}/pulse`;
+      
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        pulseUrl += `?token=${encodeURIComponent(token)}`;
+      }
     } catch (e) {
       console.error("Invalid API URL configuration");
     }

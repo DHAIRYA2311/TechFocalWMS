@@ -20,13 +20,17 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         \Illuminate\Support\Facades\Gate::define('viewPulse', function ($user = null) {
+            if (!$user && request()->bearerToken()) {
+                $user = \Illuminate\Support\Facades\Auth::guard('sanctum')->user();
+            }
+
             // Since this WMS uses Sanctum token auth for APIs, traditional web routes (like Pulse) 
-            // inside an iframe won't receive the Bearer token.
+            // inside an iframe won't receive the Bearer token natively without a query string.
             // We allow access if it's local OR if the request originates from the TechFocal frontend.
             $referer = request()->headers->get('referer') ?? request()->headers->get('origin') ?? '';
             $isFromValidOrigin = str_contains($referer, 'techfocal') || str_contains($referer, 'localhost') || str_contains($referer, '127.0.0.1');
             
-            return app()->environment('local') || ($user && $user->role === 'admin') || $isFromValidOrigin;
+            return app()->environment('local') || ($user && in_array($user->role, ['admin', 'partner', 'manager'])) || $isFromValidOrigin;
         });
 
         try {
