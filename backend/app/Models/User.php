@@ -86,6 +86,23 @@ class User extends Authenticatable
     ];
 
     /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array
+     */
+    protected $appends = ['mfa_enabled'];
+
+    /**
+     * Get the mfa_enabled attribute.
+     *
+     * @return bool
+     */
+    public function getMfaEnabledAttribute()
+    {
+        return !empty($this->mfa_secret);
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

@@ -74,7 +74,7 @@ class AuthController extends Controller
 
         $forceVerificationDueToIp = $isPrivilegedUser && !$isWhitelistedIp;
 
-        if ($mfaEnabledGlobally || $forceVerificationDueToIp) {
+        if ($mfaEnabledGlobally || $forceVerificationDueToIp || $user->mfa_secret) {
             if ($user->mfa_secret) {
                 $mfaToken = Str::random(60);
                 \Illuminate\Support\Facades\Cache::put('mfa_login_' . $mfaToken, $user->id, now()->addMinutes(10));
