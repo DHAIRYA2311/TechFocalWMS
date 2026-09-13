@@ -57,6 +57,7 @@ import ArchivedRecordsSettings from './components/settings/ArchivedRecordsSettin
 import ErrorBoundary from './components/ErrorBoundary';
 import MfaSetupPromptModal from './components/MfaSetupPromptModal';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
+import AuthLayout from './components/AuthLayout';
 
 
 // Auth Guard Component
@@ -254,18 +255,20 @@ export default function App() {
           user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />
         } />
 
-        {/* Login Page */}
-        <Route path="/login" element={
-          user ? <Navigate to="/dashboard" replace /> : <Login onLoginSuccess={handleLoginSuccess} />
-        } />
+        {/* Auth Layout for Public Routes */}
+        <Route element={<AuthLayout />}>
+          <Route path="/login" element={
+            user ? <Navigate to="/dashboard" replace /> : <Login onLoginSuccess={handleLoginSuccess} />
+          } />
 
-        <Route path="/forgot-password" element={
-          user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />
-        } />
+          <Route path="/forgot-password" element={
+            user ? <Navigate to="/dashboard" replace /> : <ForgotPassword />
+          } />
 
-        <Route path="/reset-password" element={
-          user ? <Navigate to="/dashboard" replace /> : <ResetPassword />
-        } />
+          <Route path="/reset-password" element={
+            user ? <Navigate to="/dashboard" replace /> : <ResetPassword />
+          } />
+        </Route>
 
         {/* Protected administrative paths */}
         <Route path="/" element={<ProtectedRoute user={user}><DashboardPlaceholder user={user} onLogout={handleLogoutSuccess} onUserUpdated={setUser} /></ProtectedRoute>}>

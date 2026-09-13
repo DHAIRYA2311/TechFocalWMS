@@ -11,6 +11,8 @@ use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\MfaRecoveryCodesMail;
 
 class MfaController extends Controller
 {
@@ -76,8 +78,14 @@ class MfaController extends Controller
             
             SecurityLogger::log('mfa_enabled', 'Security', $user->id, null, null, 'User enabled Multi-Factor Authentication', $user);
 
+            try {
+                Mail::to($user->email)->send(new MfaRecoveryCodesMail($user, $plainCodes));
+            } catch (\Exception $e) {
+                \Log::error('Failed to send MFA recovery codes email: ' . $e->getMessage());
+            }
+
             return response()->json([
-                'message' => 'MFA has been successfully enabled.',
+                'message' => 'MFA has been successfully enabled. Check your email for recovery codes.',
                 'recovery_codes' => $plainCodes
             ]);
         }

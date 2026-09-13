@@ -35,6 +35,7 @@ export default function DashboardPlaceholder({ user, onLogout, onUserUpdated }) 
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const searchContainerRef = useRef(null);
 
   useEffect(() => {
@@ -75,6 +76,8 @@ export default function DashboardPlaceholder({ user, onLogout, onUserUpdated }) 
   }, []);
 
   const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
     const token = localStorage.getItem('auth_token');
     
     try {
@@ -390,9 +393,17 @@ export default function DashboardPlaceholder({ user, onLogout, onUserUpdated }) 
             </NavLink>
           )}
           
-          <div className="sidebar-item" onClick={handleLogout} style={{ cursor: 'pointer' }}>
-            <LogOut size={18} />
-            <span>Sign Out</span>
+          <div 
+            className="sidebar-item" 
+            onClick={handleLogout} 
+            style={{ 
+              cursor: isLoggingOut ? 'not-allowed' : 'pointer', 
+              opacity: isLoggingOut ? 0.7 : 1,
+              pointerEvents: isLoggingOut ? 'none' : 'auto'
+            }}
+          >
+            {isLoggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+            <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span>
           </div>
         </div>
       </aside>

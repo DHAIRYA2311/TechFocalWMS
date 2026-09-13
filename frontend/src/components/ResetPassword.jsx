@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Lock, Eye, EyeOff, Loader2, ArrowLeft, Wand2 } from 'lucide-react';
+import { Lock, Eye, EyeOff, Loader2, ArrowLeft, Wand2, AlertTriangle, CheckCircle } from 'lucide-react';
 import Logo from './Logo';
 
 export default function ResetPassword() {
@@ -85,7 +85,7 @@ export default function ResetPassword() {
       });
       
       // Navigate directly to login with success message via state
-      navigate('/login', { state: { message: response.data.message || 'Password successfully reset.' } });
+      navigate('/login', { state: { message: response.data.message || 'Your password has been successfully changed.' } });
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to reset password. The link might be expired.');
     } finally {
@@ -94,202 +94,110 @@ export default function ResetPassword() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '24px',
-      backgroundColor: '#f1f5f9'
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: '440px',
-        backgroundColor: '#ffffff',
-        borderRadius: '16px',
-        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-        overflow: 'hidden'
-      }}>
-        {/* Header */}
-        <div style={{ padding: '32px 32px 24px', textAlign: 'center', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-            <Logo />
+    <div className="auth-container">
+      <div className="auth-header">
+        <Logo variant="stacked" height={60} textColor="#ffffff" />
+        <h2 className="auth-title">Create a new password</h2>
+        <p className="auth-subtitle">
+          Enter and confirm your new password below.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        {error && (
+          <div className="auth-alert-error">
+            <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
           </div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: '0 0 8px' }}>
-            Create New Password
-          </h1>
-          <p style={{ fontSize: '14px', color: '#64748b', margin: 0, lineHeight: '1.5' }}>
-            Please enter your new password below.
+        )}
+
+        <div className="auth-form-group">
+          <label className="auth-label">New Password</label>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <button
+              type="button"
+              onClick={generatePassword}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', padding: '4px 10px',
+                backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: '#cbd5e1',
+                cursor: 'pointer', transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; }}
+              onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; }}
+            >
+              <Wand2 size={12} /> Generate Strong Password
+            </button>
+          </div>
+          <div className="auth-input-wrapper">
+            <span className="auth-input-icon"><Lock size={18} /></span>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading || !token}
+              placeholder="Enter new password"
+              className="auth-input"
+              style={{ paddingRight: '40px' }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: 0 }}
+              disabled={loading || !token}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          <p style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', lineHeight: '1.4' }}>
+            Policy: Minimum 12 characters, including uppercase, lowercase, numbers, and symbols. Previous passwords cannot be reused.
           </p>
         </div>
 
-        {/* Form Container */}
-        <div style={{ padding: '32px' }}>
-          <form onSubmit={handleSubmit}>
-            {error && (
-              <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#ef4444', fontSize: '13px', marginBottom: '20px' }}>
-                {error}
-              </div>
-            )}
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '8px' }}>
-                New Password
-              </label>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                <button
-                  type="button"
-                  onClick={generatePassword}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px',
-                    backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a',
-                    cursor: 'pointer', transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#e2e8f0'; }}
-                  onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
-                >
-                  <Wand2 size={14} /> Generate Strong Password
-                </button>
-              </div>
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
-                  <Lock size={18} />
-                </span>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading || !token}
-                  placeholder="Enter new password"
-                  style={{
-                    width: '100%',
-                    padding: '12px 40px',
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    color: '#0f172a',
-                    outline: 'none',
-                    transition: 'border-color 0.2s, box-shadow 0.2s'
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#3b82f6';
-                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#e2e8f0';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex', alignItems: 'center' }}
-                  disabled={loading || !token}
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-              <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px', lineHeight: '1.4' }}>
-                Policy: Minimum 12 characters, including uppercase, lowercase, numbers, and symbols. Previous passwords cannot be reused.
-              </p>
-            </div>
-
-            <div style={{ marginBottom: '28px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#334155', marginBottom: '8px' }}>
-                Confirm New Password
-              </label>
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
-                  <Lock size={18} />
-                </span>
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  required
-                  value={passwordConfirmation}
-                  onChange={(e) => setPasswordConfirmation(e.target.value)}
-                  disabled={loading || !token}
-                  placeholder="Confirm new password"
-                  style={{
-                    width: '100%',
-                    padding: '12px 40px',
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    color: '#0f172a',
-                    outline: 'none',
-                    transition: 'border-color 0.2s, box-shadow 0.2s'
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#3b82f6';
-                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#e2e8f0';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex', alignItems: 'center' }}
-                  disabled={loading || !token}
-                >
-                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
+        <div className="auth-form-group" style={{ marginBottom: '28px' }}>
+          <label className="auth-label">Confirm Password</label>
+          <div className="auth-input-wrapper">
+            <span className="auth-input-icon"><Lock size={18} /></span>
+            <input
+              type={showConfirmPassword ? 'text' : 'password'}
+              required
+              value={passwordConfirmation}
+              onChange={(e) => setPasswordConfirmation(e.target.value)}
+              disabled={loading || !token}
+              placeholder="Re-enter new password"
+              className="auth-input"
+              style={{ paddingRight: '40px' }}
+            />
             <button
-              type="submit"
-              disabled={loading || !password || !passwordConfirmation || !token}
-              style={{
-                width: '100%',
-                padding: '12px 20px',
-                backgroundColor: loading || !password || !passwordConfirmation || !token ? '#93c5fd' : '#2563eb',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                fontWeight: '600',
-                fontSize: '15px',
-                cursor: loading || !password || !passwordConfirmation || !token ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                transition: 'background-color 0.2s',
-                marginBottom: '16px'
-              }}
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: 0 }}
+              disabled={loading || !token}
             >
-              {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-              Update Password
+              {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
-            
-            <div style={{ textAlign: 'center' }}>
-              <a
-                href="/login"
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate('/login');
-                }}
-                style={{
-                  fontSize: '13px',
-                  color: '#64748b',
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontWeight: '500'
-                }}
-              >
-                <ArrowLeft size={14} /> Back to Login
-              </a>
-            </div>
-          </form>
+          </div>
         </div>
-      </div>
+
+        <button
+          type="submit"
+          className="auth-btn-primary"
+          disabled={loading || !password || !passwordConfirmation || !token}
+        >
+          {loading ? <Loader2 size={18} className="animate-spin" style={{marginRight: '8px'}} /> : null}
+          {loading ? 'Resetting password...' : 'Reset Password'}
+        </button>
+        
+        <div style={{ textAlign: 'center', marginTop: '24px' }}>
+          <Link
+            to="/login"
+            className="auth-link"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '500' }}
+          >
+            <ArrowLeft size={14} /> Back to Sign In
+          </Link>
+        </div>
+      </form>
     </div>
   );
 }

@@ -144,13 +144,17 @@ class AuthController extends Controller
             if (!$user->mfa_secret) {
                 return response()->json(['message' => 'Invalid MFA request.'], 400);
             }
-            if (strlen($request->code) == 6 && is_numeric($request->code)) {
+            
+            // Strip any whitespace from the code that the user might have accidentally pasted
+            $cleanCode = str_replace(' ', '', $request->code);
+
+            if (strlen($cleanCode) == 6 && is_numeric($cleanCode)) {
                 $google2fa = new Google2FA();
-                $valid = $google2fa->verifyKey(decrypt($user->mfa_secret), $request->code);
+                $valid = $google2fa->verifyKey(decrypt($user->mfa_secret), $cleanCode);
             } else {
                 $recoveryCodes = $user->mfa_recovery_codes ? json_decode($user->mfa_recovery_codes, true) : [];
                 foreach ($recoveryCodes as $index => $hashedCode) {
-                    if (\Illuminate\Support\Facades\Hash::check($request->code, $hashedCode)) {
+                    if (\Illuminate\Support\Facades\Hash::check($cleanCode, $hashedCode)) {
                         $valid = true;
                         unset($recoveryCodes[$index]);
                         $user->mfa_recovery_codes = json_encode(array_values($recoveryCodes));
@@ -236,6 +240,7 @@ class AuthController extends Controller
                 'status' => $user->status,
                 'phone' => $user->phone,
                 'photo_path' => $user->photo_path,
+                'mfa_enabled' => !empty($user->mfa_secret),
                 'permissions' => [
                     'purchase_orders' => $user->hasPermission('purchase_orders'),
                     'jobs' => $user->hasPermission('jobs'),
@@ -282,6 +287,7 @@ class AuthController extends Controller
                 'status' => $user->status,
                 'phone' => $user->phone,
                 'photo_path' => $user->photo_path,
+                'mfa_enabled' => !empty($user->mfa_secret),
                 'permissions' => [
                     'purchase_orders' => $user->hasPermission('purchase_orders'),
                     'jobs' => $user->hasPermission('jobs'),
