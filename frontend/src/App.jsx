@@ -94,6 +94,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const [showMfaPrompt, setShowMfaPrompt] = useState(false);
+  const [isMfaMandatory, setIsMfaMandatory] = useState(false);
   const [showSessionTimeout, setShowSessionTimeout] = useState(false);
   const navigate = useNavigate();
 
@@ -158,6 +159,7 @@ export default function App() {
 
         // Also if they hit refresh and still need MFA setup
         if (response.data.needs_mfa_setup) {
+          setIsMfaMandatory(true);
           setShowMfaPrompt(true);
         }
 
@@ -198,7 +200,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleTriggerMfa = () => setShowMfaPrompt(true);
+    const handleTriggerMfa = () => {
+      setIsMfaMandatory(false);
+      setShowMfaPrompt(true);
+    };
     window.addEventListener('trigger-mfa-setup', handleTriggerMfa);
     return () => window.removeEventListener('trigger-mfa-setup', handleTriggerMfa);
   }, []);
@@ -208,6 +213,7 @@ export default function App() {
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     setUser(userProfile);
     if (needsMfaSetup) {
+      setIsMfaMandatory(true);
       setShowMfaPrompt(true);
     }
     Sentry.setUser({ id: userProfile.id, email: userProfile.email });
@@ -248,7 +254,7 @@ export default function App() {
         <LoadingSpinner />
       </div>
     }>
-      {showMfaPrompt && <MfaSetupPromptModal onClose={() => setShowMfaPrompt(false)} />}
+      {showMfaPrompt && <MfaSetupPromptModal onClose={() => setShowMfaPrompt(false)} isMandatory={isMfaMandatory} />}
       {showSessionTimeout && <SessionTimeoutModal onClose={() => setShowSessionTimeout(false)} />}
       <Routes>
         <Route path="/" element={

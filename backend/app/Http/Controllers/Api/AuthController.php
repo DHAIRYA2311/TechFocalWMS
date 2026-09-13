@@ -212,7 +212,7 @@ class AuthController extends Controller
         SecurityLogger::log('login_success', 'Auth', $user->id, null, null, 'Successful login via ' . ($isNewDevice ? 'new device' : 'known device'), $user);
 
         $mfaEnabledGlobally = Setting::getVal('mfa_global_enabled') === 'true';
-        $needsMfaSetup = $mfaEnabledGlobally && !$user->mfa_secret && !$user->mfa_dismissed;
+        $needsMfaSetup = $mfaEnabledGlobally && !$user->mfa_secret;
 
         if ($isNewDevice) {
             try {
@@ -275,7 +275,7 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $mfaEnabledGlobally = Setting::getVal('mfa_global_enabled') === 'true';
-        $needsMfaSetup = $mfaEnabledGlobally && !$user->mfa_secret && !$user->mfa_dismissed;
+        $needsMfaSetup = $mfaEnabledGlobally && !$user->mfa_secret;
 
         return response()->json([
             'needs_mfa_setup' => $needsMfaSetup,

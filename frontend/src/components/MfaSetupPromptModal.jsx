@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Shield, X, Check, Copy, KeyRound, Loader2, Smartphone, Download, ChevronRight } from 'lucide-react';
 
-export default function MfaSetupPromptModal({ onClose }) {
+export default function MfaSetupPromptModal({ onClose, isMandatory = false }) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [setupData, setSetupData] = useState(null);
@@ -137,9 +137,11 @@ export default function MfaSetupPromptModal({ onClose }) {
                 <p>Protect your account with Two-Factor Authentication (2FA). This adds an extra layer of security.</p>
               </div>
             </div>
-            <button className="mfa-close-btn" onClick={handleDismiss} title="Close">
-              <X size={20} />
-            </button>
+            {!isMandatory && (
+              <button className="mfa-close-btn" onClick={handleDismiss} title="Close">
+                <X size={20} />
+              </button>
+            )}
           </div>
         )}
 
@@ -183,8 +185,10 @@ export default function MfaSetupPromptModal({ onClose }) {
                 </div>
               </div>
 
-              <div className="mfa-footer-actions" style={{ justifyContent: 'space-between', marginTop: '32px' }}>
-                <button className="mfa-btn-secondary" onClick={handleDismiss}>Skip for Now</button>
+              <div className="mfa-footer-actions" style={{ justifyContent: isMandatory ? 'flex-end' : 'space-between', marginTop: '32px' }}>
+                {!isMandatory && (
+                  <button className="mfa-btn-secondary" onClick={handleDismiss}>Skip for Now</button>
+                )}
                 <button className="mfa-btn-primary" onClick={() => setStep(2)}>
                   Continue <ChevronRight size={16} />
                 </button>
